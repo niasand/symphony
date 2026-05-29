@@ -223,6 +223,39 @@ describe('ClaudeAdapter', () => {
       await turnPromise;
     });
 
+    it('adds --max-turns when maxTurnsPerInvocation is set', async () => {
+      const claudeConfig = { ...config.claude, maxTurnsPerInvocation: 3 };
+      const cfg = { ...config, claude: claudeConfig };
+      const session = { process: null, workspace: '/tmp/ws' };
+
+      const turnPromise = adapter.runTurn(session, 'test', sampleIssue(), cfg, () => {});
+      await new Promise((r) => setTimeout(r, 10));
+      const proc = lastProcess();
+
+      expect(proc.args).toContain('--max-turns');
+      expect(proc.args).toContain('3');
+
+      emitStreamLine(proc, JSON.stringify({ type: 'result', subtype: 'success', result: 'done' }));
+      emitExit(proc, 0);
+      await turnPromise;
+    });
+
+    it('does not add --max-turns when maxTurnsPerInvocation is null', async () => {
+      const claudeConfig = { ...config.claude, maxTurnsPerInvocation: null };
+      const cfg = { ...config, claude: claudeConfig };
+      const session = { process: null, workspace: '/tmp/ws' };
+
+      const turnPromise = adapter.runTurn(session, 'test', sampleIssue(), cfg, () => {});
+      await new Promise((r) => setTimeout(r, 10));
+      const proc = lastProcess();
+
+      expect(proc.args).not.toContain('--max-turns');
+
+      emitStreamLine(proc, JSON.stringify({ type: 'result', subtype: 'success', result: 'done' }));
+      emitExit(proc, 0);
+      await turnPromise;
+    });
+
     it('handles non-JSON lines gracefully', async () => {
       const session = { process: null, workspace: '/tmp/ws' };
       const events: CodexUpdateEvent[] = [];

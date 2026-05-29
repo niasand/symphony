@@ -15,5 +15,25 @@
 - New error kind `hook_timeout` distinguishes timeout from other failures
 
 **Files changed**: `typescript/src/workspace/hooks.ts`, `typescript/test/hooks.test.ts`
+
+## [2026-05-29] Add Claude Code CLI as alternative agent backend
+
+**Problem**: Symphony only supported OpenAI Codex via JSON-RPC app-server protocol. No way to use Claude Code as the coding agent.
+
+**Solution**: Introduced a pluggable `AgentAdapter` interface with two implementations:
+- `CodexAdapter` — wraps existing app-server.ts (zero changes to Codex code)
+- `ClaudeAdapter` — spawns `claude -p` as subprocess per turn, uses `--resume` for multi-turn continuity, parses `--output-format stream-json` output
+
+**Architecture**:
+- `AgentAdapter` interface: `startSession` / `runTurn` / `stopSession`
+- `createAdapter(kind)` factory selects adapter based on `agent.kind` config
+- Config: `agent.kind: 'codex' | 'claude'` (defaults to `'codex'` for backward compat)
+- New `claude` config section: command, model, maxTurnsPerInvocation, skipPermissions, systemPrompt, timeouts
+- Runner uses adapter generically; orchestrator stall detection reads agent-specific timeout
+
+**Files created**: `adapter.ts`, `claude-adapter.ts`, `codex-adapter.ts`, `claude-adapter.test.ts`
+**Files modified**: `types.ts`, `config/index.ts`, `runner.ts`, `orchestrator/index.ts`, `index.ts`, `test/helpers.ts`
+**Tests**: 179 passed (13 new Claude adapter tests), zero regressions
 [AI-REVIEW] Large commit detected: 345 lines added. Consider reviewing for AI Psychosis.
 [AI-REVIEW] Large commit detected: 749 lines added. Consider reviewing for AI Psychosis.
+[AI-REVIEW] Large commit detected: 865 lines added. Consider reviewing for AI Psychosis.
