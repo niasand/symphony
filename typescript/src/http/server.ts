@@ -13,7 +13,7 @@ export function startHttpServer(orchestrator: Orchestrator, options: HttpServerO
   const host = options.host ?? '127.0.0.1';
 
   if (host !== '127.0.0.1' && host !== '::1' && host !== 'localhost') {
-    logger.warn('HTTP server binding to non-loopback address — API endpoints will be accessible without authentication', { host });
+    throw new Error(`HTTP server refuses to bind to non-loopback address '${host}' — no authentication is implemented. Bind to 127.0.0.1 or ::1.`);
   }
 
   const server = createServer((req, res) => {

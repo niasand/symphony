@@ -32,8 +32,9 @@ export function runHook(script: string, workspacePath: string, hookName: string,
     // Kill the entire process group (negative PID). Swallow errors if group
     // already exited — this is best-effort cleanup.
     const killGroup = (signal: number | NodeJS.Signals) => {
+      if (proc.pid == null) return;
       try {
-        process.kill(-proc.pid!, signal);
+        process.kill(-proc.pid, signal);
       } catch {
         // process group already gone — nothing to do
       }
@@ -47,9 +48,10 @@ export function runHook(script: string, workspacePath: string, hookName: string,
       killGroup('SIGTERM');
 
       // Grace period then force-kill
-      setTimeout(() => {
+      const graceTimer = setTimeout(() => {
         killGroup('SIGKILL');
       }, GRACE_PERIOD_MS);
+      graceTimer.unref();
 
       resolve({
         ok: false,

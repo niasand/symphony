@@ -17,6 +17,7 @@ import { removeWorkspace } from '../workspace/manager.js';
 import { RetryManager } from './retry-manager.js';
 import { WorkspaceLifecycle } from './workspace-lifecycle.js';
 import { DispatchScheduler } from './dispatch-scheduler.js';
+import { normalizeIssueState } from '../tracker/normalizer.js';
 
 const EMPTY_CODEX_TOTALS: CodexTotals = {
   inputTokens: 0,
@@ -643,6 +644,6 @@ export class Orchestrator extends EventEmitter<OrchestratorEventMap> {
   }
 
   private normalizeIssueState(stateName: string): string {
-    return stateName.toLowerCase().trim();
+    return normalizeIssueState(stateName);
   }
 }

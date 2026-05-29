@@ -73,11 +73,12 @@ function validateInput(input: unknown): { ok: true; value: LinearGraphqlInput } 
  * in a document. Shorthand queries (bare `{ ... }`) count as 1.
  */
 function countOperations(doc: string): number {
+  // Strip # comments before counting to avoid false positives
+  const stripped = doc.replace(/#[^\n]*/g, '');
   const opKeywordPattern = /\b(query|mutation|subscription)\b/g;
-  const allKeywords = doc.match(opKeywordPattern);
+  const allKeywords = stripped.match(opKeywordPattern);
   if (!allKeywords) {
-    // No explicit keyword — check for shorthand (bare `{ ... }`)
-    const trimmed = doc.trim();
+    const trimmed = stripped.trim();
     if (trimmed.startsWith('{')) return 1;
     return 0;
   }

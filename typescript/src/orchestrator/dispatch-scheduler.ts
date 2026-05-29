@@ -2,6 +2,7 @@
 // Manages issue sorting, dispatch eligibility, and slot management.
 
 import type { Issue, OrchestratorState, ServiceConfig } from '../types.js';
+import { normalizeIssueState } from '../tracker/normalizer.js';
 
 export class DispatchScheduler {
   // ── Public API ──
@@ -83,6 +84,6 @@ export class DispatchScheduler {
   }
 
   private normalizeIssueState(stateName: string): string {
-    return stateName.toLowerCase().trim();
+    return normalizeIssueState(stateName);
   }
 }

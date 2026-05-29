@@ -70,8 +70,9 @@ export function execOverSsh(
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     const args = buildSshArgs(target, command, sshConfig);
-    const proc = spawn('ssh', args, { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+    const proc = spawn('ssh', args, { cwd, stdio: ['pipe', 'pipe', 'pipe'], detached: true });
 
+    let settled = false;
     let stdout = '';
     let stderr = '';
 
@@ -83,13 +84,25 @@ export function execOverSsh(
       stderr += chunk.toString();
     });
 
+    const killGroup = (signal: number | NodeJS.Signals) => {
+      if (proc.pid == null) return;
+      try { process.kill(-proc.pid, signal); } catch { /* group already gone */ }
+    };
+
     const timer = setTimeout(() => {
-      proc.kill('SIGKILL');
+      if (settled) return;
+      settled = true;
+      killGroup('SIGTERM');
+      const grace = setTimeout(() => killGroup('SIGKILL'), 2000);
+      grace.unref();
       resolve({ exitCode: -1, stdout, stderr: stderr + '\n[timeout]' });
     }, timeoutMs);
 
     proc.on('close', (code) => {
       clearTimeout(timer);
+      if (settled) return;
+      settled = true;
+      killGroup('SIGKILL'); // cleanup lingering children
       resolve({ exitCode: code ?? -1, stdout, stderr });
     });
 

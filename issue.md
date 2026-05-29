@@ -16,3 +16,4 @@
 
 **Files changed**: `typescript/src/workspace/hooks.ts`, `typescript/test/hooks.test.ts`
 [AI-REVIEW] Large commit detected: 345 lines added. Consider reviewing for AI Psychosis.
+[AI-REVIEW] Large commit detected: 749 lines added. Consider reviewing for AI Psychosis.

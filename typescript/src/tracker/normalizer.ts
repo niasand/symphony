@@ -128,3 +128,7 @@ function extractAssigneeId(raw: Record<string, unknown>): string | null {
   const id = (assignee as Record<string, unknown>)['id'];
   return typeof id === 'string' ? id : null;
 }
+
+export function normalizeIssueState(stateName: string): string {
+  return stateName.toLowerCase().trim();
+}
