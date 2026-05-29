@@ -1,4 +1,6 @@
 // Orchestrator — Spec Section 7, 8, 16
+// Thin coordinator: owns EventEmitter, state, tick loop timing, and reconciliation.
+// Delegates to RetryManager, WorkspaceLifecycle, DispatchScheduler.
 
 import { EventEmitter } from 'node:events';
 import type {
@@ -9,13 +11,13 @@ import type {
 import { TypedError } from '../types.js';
 import { logger } from '../observability/logger.js';
 import { fetchCandidateIssues, fetchIssueStatesByIds, fetchIssuesByStates } from '../tracker/client.js';
-import { removeWorkspace } from '../workspace/manager.js';
-import { parseConfig, validateDispatchConfig } from '../config/index.js';
+import { validateDispatchConfig } from '../config/index.js';
 import { sanitizeKey } from '../workspace/safety.js';
-import { load as loadWorkflow } from '../workflow/loader.js';
+import { removeWorkspace } from '../workspace/manager.js';
+import { RetryManager } from './retry-manager.js';
+import { WorkspaceLifecycle } from './workspace-lifecycle.js';
+import { DispatchScheduler } from './dispatch-scheduler.js';
 
-const CONTINUATION_RETRY_DELAY_MS = 1000;
-const FAILURE_RETRY_BASE_MS = 10000;
 const EMPTY_CODEX_TOTALS: CodexTotals = {
   inputTokens: 0,
   outputTokens: 0,
@@ -31,12 +33,16 @@ type OrchestratorEventMap = {
 export class Orchestrator extends EventEmitter<OrchestratorEventMap> {
   private state: OrchestratorState;
   private config: ServiceConfig;
-  private workflowPath: string;
   private tickTimer: NodeJS.Timeout | null = null;
   private tickToken: symbol | null = null;
   private pollCheckInProgress = false;
   private nextPollDueAtMs: number | null = null;
   private workerRunFn: (issue: Issue, attempt: number | null, config: ServiceConfig, onMessage: (event: CodexUpdateEvent) => void, signal: AbortSignal) => Promise<Result<void>>;
+
+  // Extracted collaborators
+  private retryManager: RetryManager;
+  private workspaceLifecycle: WorkspaceLifecycle;
+  private dispatchScheduler: DispatchScheduler;
 
   constructor(
     workflowPath: string,
@@ -44,7 +50,6 @@ export class Orchestrator extends EventEmitter<OrchestratorEventMap> {
     workerRunFn: Orchestrator['workerRunFn'],
   ) {
     super();
-    this.workflowPath = workflowPath;
     this.config = config;
     this.workerRunFn = workerRunFn;
     this.state = {
@@ -57,6 +62,13 @@ export class Orchestrator extends EventEmitter<OrchestratorEventMap> {
       codexTotals: { ...EMPTY_CODEX_TOTALS },
       codexRateLimits: null,
     };
+
+    // Wire collaborators
+    this.retryManager = new RetryManager((issueId, retryToken) => {
+      this.handleRetry(issueId, retryToken);
+    });
+    this.workspaceLifecycle = new WorkspaceLifecycle();
+    this.dispatchScheduler = new DispatchScheduler();
   }
 
   // ── Lifecycle ──
@@ -73,6 +85,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEventMap> {
       this.tickTimer = null;
       this.tickToken = null;
     }
+    this.retryManager.cancelAll(this.state);
     for (const [issueId, entry] of this.state.running) {
       entry.abortController.abort();
       logger.info('Aborting running agent', { issue_id: issueId, issue_identifier: entry.identifier });
@@ -116,7 +129,6 @@ export class Orchestrator extends EventEmitter<OrchestratorEventMap> {
   }
 
   private async runPollCycle(): Promise<void> {
-    this.refreshRuntimeConfig();
     await this.maybeDispatch();
     this.pollCheckInProgress = false;
     this.scheduleTick(this.state.pollIntervalMs);
@@ -142,7 +154,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEventMap> {
       return;
     }
 
-    if (this.availableSlots() <= 0) return;
+    if (this.dispatchScheduler.availableSlots(this.state) <= 0) return;
 
     this.chooseIssues(issuesResult.value);
   }
@@ -150,67 +162,21 @@ export class Orchestrator extends EventEmitter<OrchestratorEventMap> {
   private chooseIssues(issues: Issue[]): void {
     const sorted = this.sortIssuesForDispatch(issues);
     for (const issue of sorted) {
-      if (this.availableSlots() <= 0) break;
+      if (this.dispatchScheduler.availableSlots(this.state) <= 0) break;
       if (this.shouldDispatchIssue(issue)) {
         this.dispatchIssue(issue, null);
       }
     }
   }
 
+  // ── Public delegation methods (preserve existing API) ──
+
   sortIssuesForDispatch(issues: Issue[]): Issue[] {
-    return [...issues].sort((a, b) => {
-      const pa = a.priority != null && a.priority >= 1 && a.priority <= 4 ? a.priority : 5;
-      const pb = b.priority != null && b.priority >= 1 && b.priority <= 4 ? b.priority : 5;
-      if (pa !== pb) return pa - pb;
-      const ta = a.created_at ? a.created_at.getTime() : Number.MAX_SAFE_INTEGER;
-      const tb = b.created_at ? b.created_at.getTime() : Number.MAX_SAFE_INTEGER;
-      if (ta !== tb) return ta - tb;
-      return (a.identifier || a.id || '').localeCompare(b.identifier || b.id || '');
-    });
+    return this.dispatchScheduler.sortCandidates(issues);
   }
 
   shouldDispatchIssue(issue: Issue): boolean {
-    const activeStates = this.activeStateSet();
-    const terminalStates = this.terminalStateSet();
-
-    return (
-      this.candidateIssue(issue, activeStates, terminalStates) &&
-      !this.todoIssueBlockedByNonTerminal(issue, terminalStates) &&
-      !this.state.claimed.has(issue.id) &&
-      !this.state.running.has(issue.id) &&
-      this.availableSlots() > 0 &&
-      this.stateSlotsAvailable(issue)
-    );
-  }
-
-  private candidateIssue(issue: Issue, activeStates: Set<string>, terminalStates: Set<string>): boolean {
-    if (!issue.id || !issue.identifier || !issue.title || !issue.state) return false;
-    const normalizedState = this.normalizeIssueState(issue.state);
-    return activeStates.has(normalizedState) && !terminalStates.has(normalizedState);
-  }
-
-  private todoIssueBlockedByNonTerminal(issue: Issue, terminalStates: Set<string>): boolean {
-    if (this.normalizeIssueState(issue.state) !== 'todo') return false;
-    if (!issue.blocked_by || issue.blocked_by.length === 0) return false;
-    return issue.blocked_by.some((blocker) => {
-      if (!blocker.state) return true;
-      return !terminalStates.has(this.normalizeIssueState(blocker.state));
-    });
-  }
-
-  private stateSlotsAvailable(issue: Issue): boolean {
-    const normalizedState = this.normalizeIssueState(issue.state);
-    const limit = this.config.agent.maxConcurrentAgentsByState[normalizedState];
-    if (limit == null) return true;
-    let used = 0;
-    for (const [, entry] of this.state.running) {
-      if (this.normalizeIssueState(entry.issue.state) === normalizedState) used++;
-    }
-    return limit > used;
-  }
-
-  private availableSlots(): number {
-    return Math.max(this.state.maxConcurrentAgents - this.state.running.size, 0);
+    return this.dispatchScheduler.shouldDispatch(issue, this.state, this.config);
   }
 
   // ── Dispatch one issue ──
@@ -277,17 +243,17 @@ export class Orchestrator extends EventEmitter<OrchestratorEventMap> {
     if (reason === 'normal') {
       logger.info('Agent task completed', { issue_id: issueId, session_id: sessionId });
       this.state.completed.add(issueId);
-      this.scheduleRetry(issueId, 1, {
+      this.state = this.retryManager.schedule(this.state, issueId, 1, {
         identifier: runningEntry.identifier,
-        delayType: 'continuation' as const,
-      });
+        delayType: 'continuation',
+      }, this.config.agent.maxRetryBackoffMs);
     } else {
       logger.warn('Agent task exited', { issue_id: issueId, session_id: sessionId, error: errorMsg });
       const nextAttempt = runningEntry.retryAttempt > 0 ? runningEntry.retryAttempt + 1 : 1;
-      this.scheduleRetry(issueId, nextAttempt, {
+      this.state = this.retryManager.schedule(this.state, issueId, nextAttempt, {
         identifier: runningEntry.identifier,
         error: errorMsg ?? 'agent exited abnormally',
-      });
+      }, this.config.agent.maxRetryBackoffMs);
     }
 
     this.emit('update');
@@ -395,11 +361,6 @@ export class Orchestrator extends EventEmitter<OrchestratorEventMap> {
     const runningIds = [...state.running.keys()];
     if (runningIds.length === 0) return state;
 
-    // We'll handle this async — but the tick loop awaits. For sync safety,
-    // we do the state refresh in the async runPollCycle.
-    // This method does stall detection synchronously and returns immediately.
-    // Tracker state refresh is done via refreshRunningIssueStates() called from tick.
-
     return state;
   }
 
@@ -477,11 +438,11 @@ export class Orchestrator extends EventEmitter<OrchestratorEventMap> {
 
         entry.abortController.abort();
         const nextAttempt = entry.retryAttempt > 0 ? entry.retryAttempt + 1 : 1;
-        state = await this.terminateRunningIssue(issueId, false);
-        state = this.scheduleRetryMutable(state, issueId, nextAttempt, {
+        state = await this.workspaceLifecycle.terminateAndClean(state, issueId, this.config, false);
+        state = this.retryManager.schedule(state, issueId, nextAttempt, {
           identifier: entry.identifier,
           error: `stalled for ${elapsed}ms without codex activity`,
-        });
+        }, this.config.agent.maxRetryBackoffMs);
       }
     }
 
@@ -501,101 +462,15 @@ export class Orchestrator extends EventEmitter<OrchestratorEventMap> {
   }
 
   private async terminateRunningIssue(issueId: string, cleanupWorkspace: boolean): Promise<OrchestratorState> {
-    const entry = this.state.running.get(issueId);
-    if (!entry) {
-      return this.releaseIssueClaim(this.state, issueId);
-    }
-
-    entry.abortController.abort();
-
-    if (cleanupWorkspace) {
-      const workspaceKey = sanitizeKey(entry.identifier);
-      const workspacePath = `${this.config.workspace.root}/${workspaceKey}`;
-      try {
-        await removeWorkspace(workspacePath, this.config);
-      } catch (err) {
-        logger.warn('Failed to cleanup workspace', { issue_id: issueId, error: String(err) });
-      }
-    }
-
-    const state = this.recordSessionCompletionTotals(this.state, entry);
-    state.running.delete(issueId);
-    state.claimed.delete(issueId);
-    state.retryAttempts.delete(issueId);
-    return state;
+    this.state = await this.workspaceLifecycle.terminateAndClean(this.state, issueId, this.config, cleanupWorkspace);
+    return this.state;
   }
 
   // ── Retry ──
 
-  private scheduleRetry(
-    issueId: string,
-    attempt: number | null,
-    metadata: { identifier?: string; error?: string; delayType?: 'continuation'; workerHost?: string; workspacePath?: string },
-  ): void {
-    this.state = this.scheduleRetryMutable(this.state, issueId, attempt, metadata);
-  }
-
-  private scheduleRetryMutable(
-    state: OrchestratorState,
-    issueId: string,
-    attempt: number | null,
-    metadata: { identifier?: string; error?: string; delayType?: 'continuation'; workerHost?: string; workspacePath?: string },
-  ): OrchestratorState {
-    const previous = state.retryAttempts.get(issueId);
-    const nextAttempt = attempt ?? ((previous?.attempt ?? 0) + 1);
-    const delayMs = this.retryDelay(nextAttempt, metadata);
-    const retryToken = Symbol('retry');
-    const dueAtMs = Date.now() + delayMs;
-
-    if (previous?.timerHandle) {
-      clearTimeout(previous.timerHandle);
-    }
-
-    const timerHandle = setTimeout(() => {
-      this.handleRetry(issueId, retryToken);
-    }, delayMs);
-
-    if (timerHandle.unref) timerHandle.unref();
-
-    const identifier = metadata.identifier ?? previous?.identifier ?? issueId;
-    const error = metadata.error ?? previous?.error ?? null;
-
-    logger.info('Scheduling retry', {
-      issue_id: issueId,
-      issue_identifier: identifier,
-      delay_ms: delayMs,
-      attempt: nextAttempt,
-      error: error ?? undefined,
-    });
-
-    state.retryAttempts.set(issueId, {
-      issueId,
-      identifier,
-      attempt: nextAttempt,
-      dueAtMs,
-      timerHandle,
-      retryToken,
-      error,
-      workerHost: metadata.workerHost ?? previous?.workerHost ?? null,
-      workspacePath: metadata.workspacePath ?? previous?.workspacePath ?? null,
-    });
-
-    return state;
-  }
-
-  private retryDelay(attempt: number, metadata: { delayType?: 'continuation' }): number {
-    if (metadata.delayType === 'continuation' && attempt === 1) {
-      return CONTINUATION_RETRY_DELAY_MS;
-    }
-    const maxPower = Math.min(attempt - 1, 10);
-    return Math.min(FAILURE_RETRY_BASE_MS * (1 << maxPower), this.config.agent.maxRetryBackoffMs);
-  }
-
   private async handleRetry(issueId: string, retryToken: symbol): Promise<void> {
-    const retry = this.state.retryAttempts.get(issueId);
-    if (!retry || retry.retryToken !== retryToken) return;
-
-    this.state.retryAttempts.delete(issueId);
+    const retry = this.retryManager.claimDueEntry(this.state, issueId, retryToken);
+    if (!retry) return;
 
     const result = await fetchCandidateIssues(this.config);
     if (!result.ok) {
@@ -604,10 +479,10 @@ export class Orchestrator extends EventEmitter<OrchestratorEventMap> {
         issue_identifier: retry.identifier,
         error: result.error.message,
       });
-      this.scheduleRetry(issueId, retry.attempt + 1, {
+      this.state = this.retryManager.schedule(this.state, issueId, retry.attempt + 1, {
         identifier: retry.identifier,
         error: `retry poll failed: ${result.error.message}`,
-      });
+      }, this.config.agent.maxRetryBackoffMs);
       return;
     }
 
@@ -626,18 +501,21 @@ export class Orchestrator extends EventEmitter<OrchestratorEventMap> {
         issue_identifier: issue.identifier,
         state: issue.state,
       });
-      const workspaceKey = sanitizeKey(issue.identifier);
-      await removeWorkspace(`${this.config.workspace.root}/${workspaceKey}`, this.config);
+      try {
+        await this.workspaceLifecycle.removeWorkspaceByIdentifier(issue.identifier, this.config);
+      } catch {
+        // best effort
+      }
       this.releaseIssueClaim(this.state, issueId);
       this.emit('update');
       return;
     }
 
-    if (this.availableSlots() <= 0) {
-      this.scheduleRetry(issueId, retry.attempt + 1, {
+    if (this.dispatchScheduler.availableSlots(this.state) <= 0) {
+      this.state = this.retryManager.schedule(this.state, issueId, retry.attempt + 1, {
         identifier: issue.identifier,
         error: 'no available orchestrator slots',
-      });
+      }, this.config.agent.maxRetryBackoffMs);
       return;
     }
 
@@ -662,9 +540,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEventMap> {
         for (const issue of result.value) {
           if (issue.identifier) {
             try {
-              const workspaceKey = sanitizeKey(issue.identifier);
-              const workspacePath = `${this.config.workspace.root}/${workspaceKey}`;
-              await removeWorkspace(workspacePath, this.config);
+              await this.workspaceLifecycle.removeWorkspaceByIdentifier(issue.identifier, this.config);
             } catch {
               // best effort
             }
@@ -718,7 +594,6 @@ export class Orchestrator extends EventEmitter<OrchestratorEventMap> {
       worker_host: entry.workerHost,
     }));
 
-    const nowMs = Date.now();
     const retrying: RetryQueueRow[] = [...this.state.retryAttempts.entries()].map(([, retry]) => ({
       issue_id: retry.issueId,
       issue_identifier: retry.identifier,
@@ -758,20 +633,6 @@ export class Orchestrator extends EventEmitter<OrchestratorEventMap> {
   }
 
   // ── Helpers ──
-
-  private refreshRuntimeConfig(): void {
-    try {
-      const wfResult = loadWorkflow(this.workflowPath);
-      if (!wfResult.ok) return;
-      const configResult = parseConfig(wfResult.value.config, this.workflowPath);
-      if (!configResult.ok) return;
-      this.config = configResult.value;
-      this.state.pollIntervalMs = this.config.polling.intervalMs;
-      this.state.maxConcurrentAgents = this.config.agent.maxConcurrentAgents;
-    } catch {
-      // Keep last known good config
-    }
-  }
 
   private activeStateSet(): Set<string> {
     return new Set(this.config.tracker.activeStates.map((s) => this.normalizeIssueState(s)).filter((s) => s !== ''));
