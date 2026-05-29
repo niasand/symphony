@@ -23,7 +23,7 @@ export interface Session {
   turnSandboxPolicy: string | null;
   toolHandlers: Map<string, ToolHandler>;
   config: ServiceConfig;
-  pendingResolve: Map<number, { resolve: (value: JsonRpcResponse) => void; reject: (reason: unknown) => void; timer: NodeJS.Timeout }>;
+  pendingResolve: Map<number, { timer: NodeJS.Timeout }>;
 }
 
 export interface TurnResult {
@@ -475,7 +475,11 @@ function sendResponse(session: Omit<Session, 'threadId'> | Session, id: number, 
 }
 
 function writeLine(session: { process: ChildProcess }, line: string): void {
-  session.process.stdin?.write(line + '\n');
+  try {
+    session.process.stdin?.write(line + '\n');
+  } catch (err) {
+    logger.error('Failed to write to stdin', { error: String(err) });
+  }
 }
 
 // ── waitForResponse ──
@@ -486,12 +490,15 @@ async function waitForResponse(
   timeoutMs: number,
 ): Promise<Result<JsonRpcResponse>> {
   return new Promise<Result<JsonRpcResponse>>((resolve) => {
+    let handler: ((line: string) => void) | null = null;
+
     const timer = setTimeout(() => {
+      if (handler) session.readline?.removeListener('line', handler);
       session.pendingResolve.delete(id);
       resolve({ ok: false, error: new TypedError('response_timeout', `response timeout for id=${id} after ${timeoutMs}ms`) });
     }, timeoutMs);
 
-    const handler = (line: string) => {
+    handler = (line: string) => {
       const trimmed = line.trim();
       if (trimmed === '') return;
       let parsed: Record<string, unknown>;
@@ -508,7 +515,7 @@ async function waitForResponse(
       }
 
       clearTimeout(timer);
-      session.readline?.removeListener('line', handler);
+      session.readline?.removeListener('line', handler!);
       session.pendingResolve.delete(id);
 
       if (parsed['error']) {
@@ -518,12 +525,7 @@ async function waitForResponse(
       }
     };
 
-    session.pendingResolve.set(id, {
-      resolve: () => {},
-      reject: () => {},
-      timer,
-    });
-
+    session.pendingResolve.set(id, { timer });
     session.readline?.on('line', handler);
   });
 }

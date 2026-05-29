@@ -12,6 +12,10 @@ export interface HttpServerOptions {
 export function startHttpServer(orchestrator: Orchestrator, options: HttpServerOptions): void {
   const host = options.host ?? '127.0.0.1';
 
+  if (host !== '127.0.0.1' && host !== '::1' && host !== 'localhost') {
+    logger.warn('HTTP server binding to non-loopback address — API endpoints will be accessible without authentication', { host });
+  }
+
   const server = createServer((req, res) => {
     handleRequest(req, res, orchestrator);
   });
@@ -30,10 +34,6 @@ export function startHttpServer(orchestrator: Orchestrator, options: HttpServerO
 function handleRequest(req: IncomingMessage, res: ServerResponse, orchestrator: Orchestrator): void {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
   const path = url.pathname;
-
-  // CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
@@ -218,5 +218,5 @@ function renderDashboardHtml(snapshot: ReturnType<Orchestrator['snapshot']>): st
 }
 
 function esc(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
