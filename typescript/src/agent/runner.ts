@@ -2,6 +2,7 @@ import type { Issue, ServiceConfig, Result, CodexUpdateEvent } from '../types.js
 import { TypedError } from '../types.js';
 import { logger } from '../observability/logger.js';
 import { startSession, runTurn, stopSession, type Session } from './app-server.js';
+import { LINEAR_GRAPHQL_TOOL_SPEC } from './tools/linear-graphql.js';
 
 // ── Dependencies injected from existing modules ──
 
@@ -46,7 +47,7 @@ export async function runAgent(
 
   // ── start app-server session ──
 
-  const sessionResult = await startSession(workspace, config);
+  const sessionResult = await startSession(workspace, config, [LINEAR_GRAPHQL_TOOL_SPEC]);
   if (!sessionResult.ok) {
     await afterRunBestEffort(deps, workspace, issue, config);
     return { ok: false, error: new TypedError('spawn_failed', `failed to start codex session: ${sessionResult.error.message}`, sessionResult.error) };

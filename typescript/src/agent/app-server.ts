@@ -4,8 +4,13 @@ import type { Result, ServiceConfig, Issue, CodexUpdateEvent, CodexUsage } from 
 import { TypedError } from '../types.js';
 import { logger } from '../observability/logger.js';
 import { METHODS, type JsonRpcRequest, type JsonRpcNotification, type JsonRpcResponse } from './protocol.js';
+import { executeLinearGraphql } from './tools/linear-graphql.js';
 
 // ── Session ──
+
+export interface ToolHandler {
+  execute: (input: unknown, config: ServiceConfig) => Promise<{ success: boolean; output: unknown }>;
+}
 
 export interface Session {
   process: ChildProcess;
@@ -16,6 +21,8 @@ export interface Session {
   autoApprove: boolean;
   approvalPolicy: string | null;
   turnSandboxPolicy: string | null;
+  toolHandlers: Map<string, ToolHandler>;
+  config: ServiceConfig;
   pendingResolve: Map<number, { resolve: (value: JsonRpcResponse) => void; reject: (reason: unknown) => void; timer: NodeJS.Timeout }>;
 }
 
@@ -52,6 +59,17 @@ export async function startSession(
 
   const autoApprove = config.codex.approvalPolicy === 'never';
 
+  // Build tool handler registry from dynamicTools
+  const toolHandlers = new Map<string, ToolHandler>();
+  for (const spec of dynamicTools) {
+    if (typeof spec === 'object' && spec !== null && 'name' in spec) {
+      const name = (spec as Record<string, unknown>)['name'];
+      if (typeof name === 'string' && name === 'linear_graphql') {
+        toolHandlers.set(name, { execute: executeLinearGraphql });
+      }
+    }
+  }
+
   const partialSession = {
     process: proc,
     readline,
@@ -61,6 +79,8 @@ export async function startSession(
     autoApprove,
     approvalPolicy: config.codex.approvalPolicy,
     turnSandboxPolicy: config.codex.turnSandboxPolicy,
+    toolHandlers,
+    config,
     pendingResolve,
   };
 
@@ -211,19 +231,27 @@ async function receiveTurnLoop(
       const lines = buffer.split('\n');
       buffer = lines.pop()!;
 
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed === '') continue;
-        const result = handleLine(session, trimmed, onMessage);
-        if (result !== undefined) {
-          if (!settled) {
-            settled = true;
-            cleanup();
-            resolve(result);
+      (async () => {
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed === '') continue;
+          const result = await handleLine(session, trimmed, onMessage);
+          if (result !== undefined) {
+            if (!settled) {
+              settled = true;
+              cleanup();
+              resolve(result);
+            }
+            return;
           }
-          return;
         }
-      }
+      })().catch((err) => {
+        if (!settled) {
+          settled = true;
+          cleanup();
+          resolve({ ok: false, error: new TypedError('unknown', `line handling error: ${String(err)}`) });
+        }
+      });
     };
 
     session.process.stdout?.on('data', onData);
@@ -232,11 +260,11 @@ async function receiveTurnLoop(
 
 type Handled = Result<TurnResult> | undefined;
 
-function handleLine(
+async function handleLine(
   session: Session,
   line: string,
   onMessage: (event: CodexUpdateEvent) => void,
-): Handled {
+): Promise<Handled> {
   let parsed: Record<string, unknown>;
   try {
     parsed = JSON.parse(line) as Record<string, unknown>;
@@ -276,7 +304,7 @@ function handleLine(
       return handleApproval(session, parsed, line, onMessage);
 
     case METHODS.TOOL_CALL:
-      return handleToolCall(session, parsed, line, onMessage);
+      return await handleToolCall(session, parsed, line, onMessage);
 
     case METHODS.TOOL_REQUEST_USER_INPUT:
       return handleToolRequestUserInput(session, parsed, line, onMessage);
@@ -329,12 +357,12 @@ function handleApproval(
 
 // ── tool call handling ──
 
-function handleToolCall(
+async function handleToolCall(
   session: Session,
   payload: Record<string, unknown>,
   raw: string,
   onMessage: (event: CodexUpdateEvent) => void,
-): Handled {
+): Promise<Handled> {
   const id = payload['id'];
   if (typeof id !== 'number') return undefined;
 
@@ -342,13 +370,39 @@ function handleToolCall(
   const toolName = extractToolName(params);
   const arguments_ = extractToolArguments(params);
 
+  // Dispatch to registered tool handler
+  if (toolName != null && session.toolHandlers.has(toolName)) {
+    const handler = session.toolHandlers.get(toolName)!;
+    try {
+      const execResult = await handler.execute(arguments_, session.config);
+      const result = {
+        success: execResult.success,
+        output: JSON.stringify(execResult.output),
+        contentItems: [{ type: 'inputText' as const, text: JSON.stringify(execResult.output) }],
+      };
+      sendResponse(session, id, result);
+      emit(onMessage, 'tool_call_completed', { payload, raw, toolName, success: execResult.success });
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      const result = {
+        success: false,
+        output: JSON.stringify({ error: `tool execution error: ${errorMsg}` }),
+        contentItems: [{ type: 'inputText' as const, text: `tool execution error: ${errorMsg}` }],
+      };
+      sendResponse(session, id, result);
+      emit(onMessage, 'unsupported_tool_call', { payload, raw, toolName, error: errorMsg });
+    }
+    return undefined;
+  }
+
+  // Unknown tool call
   const result = toolName != null
-    ? { success: true, output: JSON.stringify({ tool: toolName, arguments: arguments_ }), contentItems: [{ type: 'inputText', text: `acknowledged: ${toolName}` }] }
-    : { success: false, output: `unknown tool call`, contentItems: [{ type: 'inputText', text: 'unknown tool call' }] };
+    ? { success: false, output: `unsupported dynamic tool call: ${toolName}`, contentItems: [{ type: 'inputText' as const, text: `unsupported dynamic tool call: ${toolName}` }] }
+    : { success: false, output: 'unknown tool call', contentItems: [{ type: 'inputText' as const, text: 'unknown tool call' }] };
 
   sendResponse(session, id, result);
 
-  const event = toolName != null ? 'tool_call_completed' : 'unsupported_tool_call';
+  const event = 'unsupported_tool_call';
   emit(onMessage, event, { payload, raw });
 
   return undefined;
