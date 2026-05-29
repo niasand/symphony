@@ -69,28 +69,10 @@ function validateInput(input: unknown): { ok: true; value: LinearGraphqlInput } 
 }
 
 /**
- * Count the number of named GraphQL operations (query/mutation/subscription)
- * in a document. Anonymous queries count as 1. Returns 0 for fragments-only.
+ * Count the number of GraphQL operations (query/mutation/subscription)
+ * in a document. Shorthand queries (bare `{ ... }`) count as 1.
  */
 function countOperations(doc: string): number {
-  const operationPattern = /\b(query|mutation|subscription)\s*\{/g;
-  const namedPattern = /\b(query|mutation|subscription)\s+\w+/g;
-
-  // Count anonymous operations like `query { ... }` or `{ ... }`
-  let count = 0;
-  const matches = doc.match(operationPattern);
-  if (matches) count += matches.length;
-
-  // Count named operations like `query Foo { ... }`
-  // Named operations already have a `{` after the keyword that matched above,
-  // so we subtract the overlap and add the named count.
-  const namedMatches = doc.match(namedPattern);
-  if (namedMatches) {
-    // Named operations were already counted once by operationPattern (which matches `query {`),
-    // but named ops have a name between keyword and `{`. We need a cleaner approach.
-  }
-
-  // Cleaner approach: find all operation keywords
   const opKeywordPattern = /\b(query|mutation|subscription)\b/g;
   const allKeywords = doc.match(opKeywordPattern);
   if (!allKeywords) {
@@ -99,7 +81,6 @@ function countOperations(doc: string): number {
     if (trimmed.startsWith('{')) return 1;
     return 0;
   }
-
   return allKeywords.length;
 }
 

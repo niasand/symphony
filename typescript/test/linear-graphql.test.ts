@@ -35,13 +35,15 @@ describe('LINEAR_GRAPHQL_TOOL_SPEC', () => {
 });
 
 describe('executeLinearGraphql', () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn<typeof globalThis, 'fetch'>>;
+
   beforeEach(() => {
-    vi.restoreAllMocks();
+    fetchSpy = vi.spyOn(globalThis, 'fetch');
   });
 
   it('valid query + variables -> success', async () => {
     const mockData = { viewer: { id: 'u1', name: 'Test' } };
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+    fetchSpy.mockResolvedValueOnce({
       ok: true,
       status: 200,
       json: async () => ({ data: mockData }),
@@ -55,16 +57,16 @@ describe('executeLinearGraphql', () => {
     expect(result.success).toBe(true);
     expect(result.output).toEqual(mockData);
 
-    const fetchCall = vi.spyOn(globalThis, 'fetch').mock.calls[0];
-    expect(fetchCall![1]!.headers).toHaveProperty('Authorization', 'lin_api_testkey123');
-    const body = JSON.parse(fetchCall![1]!.body as string);
+    const call = fetchSpy.mock.calls[0]!;
+    expect(call[1]!.headers).toHaveProperty('Authorization', 'lin_api_testkey123');
+    const body = JSON.parse(call[1]!.body as string);
     expect(body.query).toBe('query { viewer { id name } }');
     expect(body.variables).toEqual({ first: 10 });
   });
 
   it('raw string input -> success (shorthand)', async () => {
     const mockData = { issues: { nodes: [] } };
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+    fetchSpy.mockResolvedValueOnce({
       ok: true,
       status: 200,
       json: async () => ({ data: mockData }),
@@ -98,13 +100,13 @@ describe('executeLinearGraphql', () => {
     expect(result.success).toBe(false);
     expect((result.output as { error: string }).error).toBe('missing Linear auth');
     // Should not have called fetch
-    expect(vi.spyOn(globalThis, 'fetch')).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('GraphQL errors in response -> success=false with preserved body', async () => {
     const errors = [{ message: 'Something went wrong' }];
     const partialData = { issues: null };
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+    fetchSpy.mockResolvedValueOnce({
       ok: true,
       status: 200,
       json: async () => ({ errors, data: partialData }),
@@ -146,7 +148,7 @@ describe('executeLinearGraphql', () => {
   });
 
   it('transport failure -> failure with transport error', async () => {
-    vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('Network down'));
+    fetchSpy.mockRejectedValueOnce(new Error('Network down'));
 
     const result = await executeLinearGraphql(
       { query: 'query { viewer { id } }' },
@@ -159,7 +161,7 @@ describe('executeLinearGraphql', () => {
   });
 
   it('non-200 HTTP status -> failure', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+    fetchSpy.mockResolvedValueOnce({
       ok: false,
       status: 500,
       json: async () => ({}),
@@ -176,7 +178,7 @@ describe('executeLinearGraphql', () => {
 
   it('variables omitted -> query sent without variables field', async () => {
     const mockData = { viewer: { id: 'u1' } };
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+    fetchSpy.mockResolvedValueOnce({
       ok: true,
       status: 200,
       json: async () => ({ data: mockData }),
@@ -188,7 +190,8 @@ describe('executeLinearGraphql', () => {
     );
 
     expect(result.success).toBe(true);
-    const body = JSON.parse(vi.spyOn(globalThis, 'fetch').mock.calls[0]![1]!.body as string);
+    const call = fetchSpy.mock.calls[0]!;
+    const body = JSON.parse(call[1]!.body as string);
     expect(body).not.toHaveProperty('variables');
     expect(body.query).toBe('query { viewer { id } }');
   });
