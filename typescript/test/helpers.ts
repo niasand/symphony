@@ -37,6 +37,7 @@ export function defaultConfig(overrides?: Partial<ServiceConfig>): ServiceConfig
       timeoutMs: 60000,
     },
     agent: {
+      kind: 'codex',
       maxConcurrentAgents: 10,
       maxTurns: 20,
       maxRetryBackoffMs: 300000,
@@ -49,6 +50,15 @@ export function defaultConfig(overrides?: Partial<ServiceConfig>): ServiceConfig
       turnSandboxPolicy: null,
       turnTimeoutMs: 3600000,
       readTimeoutMs: 5000,
+      stallTimeoutMs: 300000,
+    },
+    claude: {
+      command: 'claude',
+      model: null,
+      maxTurnsPerInvocation: null,
+      skipPermissions: false,
+      systemPrompt: null,
+      turnTimeoutMs: 3600000,
       stallTimeoutMs: 300000,
     },
     worker: {

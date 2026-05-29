@@ -1,7 +1,8 @@
 import type { Issue, ServiceConfig, Result, CodexUpdateEvent } from '../types.js';
 import { TypedError } from '../types.js';
 import { logger } from '../observability/logger.js';
-import { startSession, runTurn, stopSession, type Session } from './app-server.js';
+import { createAdapter } from './adapter.js';
+import type { AgentSession } from './adapter.js';
 import { LINEAR_GRAPHQL_TOOL_SPEC } from './tools/linear-graphql.js';
 
 // ── Dependencies injected from existing modules ──
@@ -45,12 +46,14 @@ export async function runAgent(
     }
   }
 
-  // ── start app-server session ──
+  // ── start agent session ──
 
-  const sessionResult = await startSession(workspace, config, [LINEAR_GRAPHQL_TOOL_SPEC]);
+  const adapter = createAdapter(config.agent.kind);
+
+  const sessionResult = await adapter.startSession(workspace, config, [LINEAR_GRAPHQL_TOOL_SPEC]);
   if (!sessionResult.ok) {
     await afterRunBestEffort(deps, workspace, issue, config);
-    return { ok: false, error: new TypedError('spawn_failed', `failed to start codex session: ${sessionResult.error.message}`, sessionResult.error) };
+    return { ok: false, error: new TypedError('spawn_failed', `failed to start ${config.agent.kind} session: ${sessionResult.error.message}`, sessionResult.error) };
   }
 
   const session = sessionResult.value;
@@ -74,7 +77,7 @@ export async function runAgent(
 
       logger.info('Starting turn', { ...logCtx, turn: turnNumber, max_turns: maxTurns });
 
-      const turnResult = await runTurn(session, promptResult.value, currentIssue, config, onMessage);
+      const turnResult = await adapter.runTurn(session, promptResult.value, currentIssue, config, onMessage);
 
       if (!turnResult.ok) {
         logger.warn('Turn failed', { ...logCtx, turn: turnNumber, error: turnResult.error.message });
@@ -107,7 +110,7 @@ export async function runAgent(
       turnNumber++;
     }
   } finally {
-    stopSession(session);
+    adapter.stopSession(session);
     await afterRunBestEffort(deps, workspace, issue, config);
   }
 
@@ -132,10 +135,10 @@ function buildTurnPrompt(
     value: [
       'Continuation guidance:',
       '',
-      '- The previous Codex turn completed normally, but the issue is still in an active state.',
+      '- The previous agent turn completed normally, but the issue is still in an active state.',
       `- This is continuation turn #${turnNumber} of ${maxTurns} for the current agent run.`,
-      '- Resume from the current workspace and workpad state instead of restarting from scratch.',
-      '- The original task instructions and prior turn context are already present in this thread, so do not restate them before acting.',
+      '- Resume from the current workspace state instead of restarting from scratch.',
+      '- The original task instructions and prior turn context are already present, so do not restate them before acting.',
       '- Focus on the remaining ticket work and do not end the turn while the issue stays active unless you are truly blocked.',
     ].join('\n'),
   };

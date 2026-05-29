@@ -13,6 +13,7 @@ export type {
   HooksConfig,
   AgentConfig,
   CodexConfig,
+  ClaudeConfig,
   WorkerConfig,
   ServerConfig,
   WorkspaceInfo,
@@ -52,3 +53,5 @@ export {
 export { createForIssue, removeWorkspace } from './workspace/manager.js';
 export { runHook } from './workspace/hooks.js';
 export { buildPrompt } from './prompt/builder.js';
+export type { AgentAdapter, AgentSession, TurnResult } from './agent/adapter.js';
+export { createAdapter } from './agent/adapter.js';

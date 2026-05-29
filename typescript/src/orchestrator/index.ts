@@ -420,7 +420,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEventMap> {
   }
 
   private async reconcileStalledRunningIssues(): Promise<OrchestratorState> {
-    const timeoutMs = this.config.codex.stallTimeoutMs;
+    const timeoutMs = getStallTimeoutMs(this.config);
     if (timeoutMs <= 0) return this.state;
     if (this.state.running.size === 0) return this.state;
 
@@ -646,4 +646,10 @@ export class Orchestrator extends EventEmitter<OrchestratorEventMap> {
   private normalizeIssueState(stateName: string): string {
     return normalizeIssueState(stateName);
   }
+}
+
+// ── Agent-agnostic stall timeout ──
+
+function getStallTimeoutMs(config: ServiceConfig): number {
+  return config.agent.kind === 'claude' ? config.claude.stallTimeoutMs : config.codex.stallTimeoutMs;
 }

@@ -2,7 +2,7 @@
 
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import type { Result, ServiceConfig } from '../types.js';
+import type { Result, ServiceConfig, AgentConfig } from '../types.js';
 import { TypedError } from '../types.js';
 import { resolveEnvRef } from '../workspace/safety.js';
 
@@ -72,6 +72,12 @@ function strArr(raw: Record<string, unknown>, key: string, fallback: string[]): 
   return fallback;
 }
 
+function bool(raw: Record<string, unknown>, key: string, fallback: boolean): boolean {
+  const val = lookup(raw, key);
+  if (typeof val === 'boolean') return val;
+  return fallback;
+}
+
 function normalizePath(p: string): string {
   if (p.startsWith('~/')) {
     const home = process.env.HOME || process.env.USERPROFILE || tmpdir();
@@ -87,6 +93,7 @@ export function parseConfig(raw: RawConfig, workflowDir: string): Result<Service
   const hooks = obj(raw, 'hooks');
   const agent = obj(raw, 'agent');
   const codex = obj(raw, 'codex');
+  const claude = obj(raw, 'claude');
   const worker = obj(raw, 'worker');
   const server = obj(raw, 'server');
 
@@ -103,6 +110,7 @@ export function parseConfig(raw: RawConfig, workflowDir: string): Result<Service
   const maxConcurrentAgentsByState = normalizeStateLimits(rawStateLimits);
 
   const intervalMs = num(polling, 'intervalMs', 30000);
+  const agentKind = parseAgentKind(str(agent, 'kind', 'codex'));
   const maxConcurrentAgents = num(agent, 'maxConcurrentAgents', 10);
   const maxTurns = num(agent, 'maxTurns', 20);
   const maxRetryBackoffMs = num(agent, 'maxRetryBackoffMs', 300000);
@@ -113,6 +121,7 @@ export function parseConfig(raw: RawConfig, workflowDir: string): Result<Service
 
   const errors: string[] = [];
 
+  if (agentKind === undefined) errors.push('agent.kind must be "codex" or "claude"');
   if (intervalMs <= 0) errors.push('polling.intervalMs must be > 0');
   if (maxConcurrentAgents <= 0) errors.push('agent.maxConcurrentAgents must be > 0');
   if (maxTurns <= 0) errors.push('agent.maxTurns must be > 0');
@@ -148,6 +157,7 @@ export function parseConfig(raw: RawConfig, workflowDir: string): Result<Service
       timeoutMs: hookTimeoutMs,
     },
     agent: {
+      kind: agentKind ?? 'codex',
       maxConcurrentAgents,
       maxTurns,
       maxRetryBackoffMs,
@@ -161,6 +171,15 @@ export function parseConfig(raw: RawConfig, workflowDir: string): Result<Service
       turnTimeoutMs,
       readTimeoutMs,
       stallTimeoutMs,
+    },
+    claude: {
+      command: str(claude, 'command', 'claude'),
+      model: nullableStr(claude, 'model'),
+      maxTurnsPerInvocation: nullableNum(claude, 'maxTurnsPerInvocation'),
+      skipPermissions: bool(claude, 'skipPermissions', false),
+      systemPrompt: nullableStr(claude, 'systemPrompt'),
+      turnTimeoutMs: num(claude, 'turnTimeoutMs', 3600000),
+      stallTimeoutMs: num(claude, 'stallTimeoutMs', 300000),
     },
     worker: {
       sshHosts: strArr(worker, 'sshHosts', []),
@@ -185,6 +204,13 @@ function normalizeStateLimits(raw: unknown): Record<string, number> {
   return result;
 }
 
+function parseAgentKind(raw: string): AgentConfig['kind'] | undefined {
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === 'claude') return 'claude';
+  if (normalized === 'codex') return 'codex';
+  return undefined;
+}
+
 export function validateDispatchConfig(config: ServiceConfig): Result<void> {
   const errors: string[] = [];
 
@@ -202,8 +228,15 @@ export function validateDispatchConfig(config: ServiceConfig): Result<void> {
     errors.push('tracker.projectSlug is required for linear tracker');
   }
 
-  if (!config.codex.command || config.codex.command.trim() === '') {
-    errors.push('codex.command must be non-empty');
+  // Validate agent-specific command config
+  if (config.agent.kind === 'claude') {
+    if (!config.claude.command || config.claude.command.trim() === '') {
+      errors.push('claude.command must be non-empty');
+    }
+  } else {
+    if (!config.codex.command || config.codex.command.trim() === '') {
+      errors.push('codex.command must be non-empty');
+    }
   }
 
   if (errors.length > 0) {

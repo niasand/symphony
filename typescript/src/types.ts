@@ -20,6 +20,7 @@ export type ErrorKind =
   | 'hook_failed'
   | 'hook_timeout'
   | 'codex_not_found'
+  | 'claude_not_found'
   | 'invalid_workspace_cwd'
   | 'response_timeout'
   | 'turn_timeout'
@@ -110,6 +111,7 @@ export interface HooksConfig {
 }
 
 export interface AgentConfig {
+  kind: 'codex' | 'claude';
   maxConcurrentAgents: number;
   maxTurns: number;
   maxRetryBackoffMs: number;
@@ -123,6 +125,16 @@ export interface CodexConfig {
   turnSandboxPolicy: string | null;
   turnTimeoutMs: number;
   readTimeoutMs: number;
+  stallTimeoutMs: number;
+}
+
+export interface ClaudeConfig {
+  command: string;
+  model: string | null;
+  maxTurnsPerInvocation: number | null;
+  skipPermissions: boolean;
+  systemPrompt: string | null;
+  turnTimeoutMs: number;
   stallTimeoutMs: number;
 }
 
@@ -142,6 +154,7 @@ export interface ServiceConfig {
   hooks: HooksConfig;
   agent: AgentConfig;
   codex: CodexConfig;
+  claude: ClaudeConfig;
   worker: WorkerConfig;
   server: ServerConfig;
 }
