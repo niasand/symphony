@@ -217,9 +217,13 @@ defmodule SymphonyElixir.Orchestrator do
         handle_sub_task_completion(:normal, state, issue_id, running_entry, session_id)
 
       true ->
-        # Agent exited normally (e.g., max turns reached) — schedule continuation retry
-        # so the task gets re-dispatched rather than prematurely marked Resolved.
-        handle_normal_agent_continuation(state, issue_id, running_entry, session_id)
+        if input_required_blocker?(running_entry) do
+          block_input_required_agent_down(state, issue_id, running_entry, session_id, :normal)
+        else
+          # Agent exited normally (e.g., max turns reached) — schedule continuation retry
+          # so the task gets re-dispatched rather than prematurely marked Resolved.
+          handle_normal_agent_continuation(state, issue_id, running_entry, session_id)
+        end
     end
   end
 

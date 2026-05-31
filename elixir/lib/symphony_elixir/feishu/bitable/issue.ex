@@ -43,5 +43,9 @@ defmodule SymphonyElixir.Feishu.Bitable.Issue do
     Enum.map(labels, &String.downcase/1)
   end
 
+  defp parse_labels(label) when is_binary(label) and label != "" do
+    [String.downcase(label)]
+  end
+
   defp parse_labels(_), do: []
 end

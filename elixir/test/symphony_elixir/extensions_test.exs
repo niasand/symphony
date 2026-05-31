@@ -202,6 +202,7 @@ defmodule SymphonyElixir.ExtensionsTest do
                  "last_message" => "rendered",
                  "started_at" => state_payload["running"] |> List.first() |> Map.fetch!("started_at"),
                  "last_event_at" => nil,
+                 "tracker_url" => "https://qcnh0bjty8ev.feishu.cn/base/test-app-token/table/test-table-id?record=issue-http",
                  "tokens" => %{"input_tokens" => 4, "output_tokens" => 8, "total_tokens" => 12}
                }
              ],
@@ -448,11 +449,11 @@ defmodule SymphonyElixir.ExtensionsTest do
     assert expanded_html =~ "Dashboard task"
     assert expanded_html =~ "Shows the current task summary"
     assert expanded_html =~ "卡点"
-    assert expanded_html =~ "Next plan"
-    assert expanded_html =~ "Last activity"
-    assert expanded_html =~ "Workspace"
-    assert expanded_html =~ "No explicit blocker detected"
-    assert expanded_html =~ "Continue monitoring"
+    assert expanded_html =~ "下一步"
+    assert expanded_html =~ "最近活动"
+    assert expanded_html =~ "工作区"
+    assert expanded_html =~ "当前无明显卡点。"
+    assert expanded_html =~ "继续监控，下一次刷新将显示最新 Codex 更新。"
 
     collapsed_html =
       view
