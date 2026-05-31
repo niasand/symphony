@@ -223,16 +223,43 @@ defmodule SymphonyElixir.Claude.CLI do
   end
 
   defp result_error?(payload) do
-    Map.get(payload, "subtype") in ["error", "error_tool_use"] or Map.get(payload, "is_error") == true
+    # error_max_turns is not a real failure — the task may have completed within the limit
+    # Only treat genuine errors as failures
+    Map.get(payload, "subtype") in ["error", "error_tool_use"] and
+      Map.get(payload, "is_error") == true
   end
 
   defp usage_from_result(payload) when is_map(payload) do
     cost_usd = Map.get(payload, "cost_usd") || Map.get(payload, "total_cost_usd")
 
+    # Token counts live in the final "result" event's "usage" field.
+    # Intermediate assistant/user events always report 0 — ignore them.
+    usage = Map.get(payload, "usage", %{})
+    input_tokens = Map.get(usage, "input_tokens", 0)
+    output_tokens = Map.get(usage, "output_tokens", 0)
+    total_tokens = input_tokens + output_tokens
+
+    # Also check modelUsage for per-model breakdown if available
+    {input_tokens, output_tokens, total_tokens} =
+      case Map.get(payload, "modelUsage") do
+        model_usage when is_map(model_usage) ->
+          # Sum across all models
+          model_usage
+          |> Map.values()
+          |> Enum.reduce({0, 0, 0}, fn mu, {i, o, _t} ->
+            mi = Map.get(mu, "inputTokens", 0) + i
+            mo = Map.get(mu, "outputTokens", 0) + o
+            {mi, mo, mi + mo}
+          end)
+
+        _ ->
+          {input_tokens, output_tokens, total_tokens}
+      end
+
     %{
-      input_tokens: 0,
-      output_tokens: 0,
-      total_tokens: 0,
+      input_tokens: input_tokens,
+      output_tokens: output_tokens,
+      total_tokens: total_tokens,
       cost_usd: cost_usd,
       duration_ms: Map.get(payload, "duration_ms")
     }

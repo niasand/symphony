@@ -210,7 +210,7 @@ defmodule SymphonyElixir.Config.Schema do
     embedded_schema do
       field(:command, :string, default: "claude")
       field(:model, :string)
-      field(:max_turns_per_invocation, :integer)
+      field(:max_turns_per_invocation, :integer, default: 10)
       field(:skip_permissions, :boolean, default: false)
       field(:system_prompt, :string)
       field(:turn_timeout_ms, :integer, default: 3_600_000)

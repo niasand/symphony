@@ -748,7 +748,7 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
     assert config.codex.command == "codex app-server"
     assert config.claude.command == "claude"
     assert config.claude.model == nil
-    assert config.claude.max_turns_per_invocation == nil
+    assert config.claude.max_turns_per_invocation == 10
     assert config.claude.skip_permissions == false
     assert config.claude.system_prompt == nil
 
