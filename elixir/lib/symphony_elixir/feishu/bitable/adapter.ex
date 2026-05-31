@@ -4,9 +4,9 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
   Implements the SymphonyElixir.Tracker behaviour.
 
   State lifecycle:
-  - "待处理" (active) → discovered by poll → dispatch → update to "进行中"
-  - "进行中" (running) → agent executing → completion → update to "已完成"
-  - "已完成" / "已取消" (terminal)
+  - "Open" (active) → discovered by poll → dispatch → update to "In Progress"
+  - "In Progress" (running) → agent executing → completion → update to "Resolved"/"Failed"
+  - "Done"/"Resolved"/"Failed"/"Cancelled" (terminal)
   """
 
   @behaviour SymphonyElixir.Tracker
@@ -22,13 +22,11 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
 
   @impl true
   def fetch_issues_by_states(state_names) when is_list(state_names) do
-    # Build filter: 任务状态 contains any of the state names
-    # Feishu filter format: {"conjunction":"or","conditions":[...]}
     conditions =
       state_names
       |> Enum.filter(&is_binary/1)
       |> Enum.map(fn state ->
-        %{"field_name" => "任务状态", "operator" => "is", "value" => [state]}
+        %{"field_name" => "Status", "operator" => "is", "value" => [state]}
       end)
 
     case conditions do
@@ -47,7 +45,6 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
 
   @impl true
   def fetch_issue_states_by_ids(issue_ids) when is_list(issue_ids) do
-    # Fetch each record by ID individually — Bitable API doesn't have a batch-get by record_id filter
     results =
       issue_ids
       |> Enum.flat_map(fn record_id ->
@@ -69,9 +66,8 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
 
   @impl true
   def create_comment(record_id, body) when is_binary(record_id) and is_binary(body) do
-    # Append comment to the "评论" text field
     with {:ok, current} <- Client.get_record(bitable_app_token(), bitable_table_id(), record_id) do
-      existing = extract_text_field(current, "评论")
+      existing = extract_text_field(current, "Comments")
       separator = if existing && existing != "", do: "\n\n---\n\n", else: ""
       new_comment = "#{separator}[#{format_timestamp()}] #{body}"
 
@@ -79,7 +75,7 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
              bitable_app_token(),
              bitable_table_id(),
              record_id,
-             %{"评论" => "#{existing}#{new_comment}"}
+             %{"Comments" => "#{existing}#{new_comment}"}
            ) do
         {:ok, _} -> :ok
         {:error, reason} -> {:error, reason}
@@ -90,19 +86,18 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
   @impl true
   def update_issue_state(record_id, state_name)
       when is_binary(record_id) and is_binary(state_name) do
-    update_fields = %{"任务状态" => state_name}
+    update_fields = %{"Status" => state_name}
 
-    # Add completion metadata for terminal states
     update_fields =
       case state_name do
-        "进行中" ->
+        "In Progress" ->
           Map.merge(update_fields, %{
-            "执行者" => agent_label(),
-            "评论" => "[#{format_timestamp()}] 任务已被 #{agent_label()} 领取"
+            "Agent" => agent_label(),
+            "Comments" => "[#{format_timestamp()}] Claimed by #{agent_label()}"
           })
 
-        "已完成" ->
-          Map.put(update_fields, "完成时间", System.system_time(:millisecond))
+        "Resolved" ->
+          Map.put(update_fields, "Completed At", System.system_time(:millisecond))
 
         _ ->
           update_fields
@@ -124,31 +119,17 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
   def update_record_with_metadata(record_id, metadata) when is_binary(record_id) and is_map(metadata) do
     fields = %{}
 
-    fields =
-      if metadata[:state] do
-        Map.put(fields, "任务状态", metadata[:state])
-      else
-        fields
-      end
+    fields = if metadata[:state], do: Map.put(fields, "Status", metadata[:state]), else: fields
+    fields = if metadata[:input_tokens], do: Map.put(fields, "Token Input", metadata[:input_tokens]), else: fields
+    fields = if metadata[:output_tokens], do: Map.put(fields, "Token Output", metadata[:output_tokens]), else: fields
+    fields = if metadata[:total_tokens], do: Map.put(fields, "Token Total", metadata[:total_tokens]), else: fields
+    fields = if metadata[:error], do: Map.put(fields, "Error", metadata[:error]), else: fields
+    fields = if metadata[:branch_name], do: Map.put(fields, "Branch", metadata[:branch_name]), else: fields
+    fields = if metadata[:retry_count], do: Map.put(fields, "Retries", metadata[:retry_count]), else: fields
 
     fields =
-      if metadata[:input_tokens], do: Map.put(fields, "Token Input", metadata[:input_tokens]), else: fields
-
-    fields =
-      if metadata[:output_tokens], do: Map.put(fields, "Token Output", metadata[:output_tokens]), else: fields
-
-    fields =
-      if metadata[:total_tokens], do: Map.put(fields, "Token Total", metadata[:total_tokens]), else: fields
-
-    fields =
-      if metadata[:error], do: Map.put(fields, "错误信息", metadata[:error]), else: fields
-
-    fields =
-      if metadata[:retry_count], do: Map.put(fields, "重试次数", metadata[:retry_count]), else: fields
-
-    fields =
-      if metadata[:state] in ["已完成", "已失败"] do
-        Map.put(fields, "完成时间", System.system_time(:millisecond))
+      if metadata[:state] in ["Resolved", "Failed"] do
+        Map.put(fields, "Completed At", System.system_time(:millisecond))
       else
         fields
       end

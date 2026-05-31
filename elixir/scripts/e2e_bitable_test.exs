@@ -16,12 +16,12 @@ end
 
 alias SymphonyElixir.Feishu.Bitable.{Adapter, Issue}
 
-record_id = "recvlb7xpZvym2"
+record_id = "recvlbhYJa244u"
 
 IO.puts("\n=== Step 1: Fetch candidate issues (待处理) ===")
 
 # Use Bitable-native state names instead of config defaults
-case Adapter.fetch_issues_by_states(["待处理"]) do
+case Adapter.fetch_issues_by_states(["Open"]) do
   {:ok, issues} ->
     IO.puts("Found #{length(issues)} candidate issues:")
     for issue <- issues do
@@ -33,10 +33,10 @@ case Adapter.fetch_issues_by_states(["待处理"]) do
     if target do
       IO.puts("\n✓ Target task found: #{target.title}")
 
-      # Step 2: Claim — update to 进行中
-      IO.puts("\n=== Step 2: Claim task → 进行中 ===")
+      # Step 2: Claim — update to In Progress
+      IO.puts("\n=== Step 2: Claim task → In Progress ===")
 
-      case Adapter.update_issue_state(record_id, "进行中") do
+      case Adapter.update_issue_state(record_id, "In Progress") do
         :ok ->
           IO.puts("✓ Status updated to 进行中")
 
@@ -98,14 +98,15 @@ case Adapter.fetch_issues_by_states(["待处理"]) do
           end
 
           # Step 4: Update to completed
-          IO.puts("\n=== Step 4: Mark task → 已完成 + metadata ===")
+          IO.puts("\n=== Step 4: Mark task → Resolved + metadata ===")
 
           metadata = %{
-            state: "已完成",
+            state: "Resolved",
             input_tokens: input_tokens,
             output_tokens: output_tokens,
             total_tokens: total_tokens,
-            retry_count: 0
+            retry_count: 0,
+            branch_name: "sym-e2e-001"
           }
 
           case Adapter.update_record_with_metadata(record_id, metadata) do

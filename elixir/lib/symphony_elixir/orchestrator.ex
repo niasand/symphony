@@ -939,7 +939,7 @@ defmodule SymphonyElixir.Orchestrator do
         Logger.info("Dispatching issue to agent: #{issue_context(issue)} pid=#{inspect(pid)} attempt=#{inspect(attempt)} worker_host=#{worker_host || "local"}")
 
         # Notify tracker that the issue is now being processed
-        Tracker.update_issue_state(issue.id, "进行中")
+        Tracker.update_issue_state(issue.id, "In Progress")
 
         running =
           Map.put(state.running, issue.id, %{
@@ -1935,13 +1935,16 @@ defmodule SymphonyElixir.Orchestrator do
     output_tokens = Map.get(running_entry, :codex_output_tokens, 0)
     total_tokens = Map.get(running_entry, :codex_total_tokens, 0)
     retry_count = Map.get(running_entry, :retry_attempt, 0)
+    workspace_path = Map.get(running_entry, :workspace_path)
+    branch_name = read_git_branch(workspace_path)
 
     metadata = %{
-      state: "已完成",
+      state: "Resolved",
       input_tokens: input_tokens,
       output_tokens: output_tokens,
       total_tokens: total_tokens,
-      retry_count: retry_count
+      retry_count: retry_count,
+      branch_name: branch_name
     }
 
     case Tracker.adapter() do
@@ -1949,7 +1952,7 @@ defmodule SymphonyElixir.Orchestrator do
         SymphonyElixir.Feishu.Bitable.Adapter.update_record_with_metadata(issue_id, metadata)
 
       _ ->
-        Tracker.update_issue_state(issue_id, "已完成")
+        Tracker.update_issue_state(issue_id, "Resolved")
     end
   end
 
@@ -1960,15 +1963,18 @@ defmodule SymphonyElixir.Orchestrator do
     output_tokens = Map.get(running_entry, :codex_output_tokens, 0)
     total_tokens = Map.get(running_entry, :codex_total_tokens, 0)
     retry_attempt = Map.get(running_entry, :retry_attempt, 0)
+    workspace_path = Map.get(running_entry, :workspace_path)
+    branch_name = read_git_branch(workspace_path)
     error_msg = "agent exited: #{inspect(reason)}"
 
     metadata = %{
-      state: "已失败",
+      state: "Failed",
       input_tokens: input_tokens,
       output_tokens: output_tokens,
       total_tokens: total_tokens,
       retry_count: retry_attempt,
-      error: error_msg
+      error: error_msg,
+      branch_name: branch_name
     }
 
     case Tracker.adapter() do
@@ -1981,4 +1987,19 @@ defmodule SymphonyElixir.Orchestrator do
   end
 
   defp update_tracker_failure(_issue_id, _running_entry, _reason), do: :ok
+
+  defp read_git_branch(nil), do: nil
+
+  defp read_git_branch(workspace_path) when is_binary(workspace_path) do
+    case System.cmd("git", ["branch", "--show-current"], cd: workspace_path, stderr_to_stdout: true) do
+      {branch, 0} ->
+        branch = String.trim(branch)
+        if branch != "", do: branch, else: nil
+
+      _ ->
+        nil
+    end
+  end
+
+  defp read_git_branch(_), do: nil
 end
