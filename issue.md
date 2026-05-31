@@ -10,6 +10,16 @@
 
 **Files changed**: `elixir/lib/symphony_elixir/orchestrator.ex`
 
+**E2E verification**: Created test task `recvld22cZdWmC` — all fields (Status, Token Input/Output/Total, Retries, Error, Completed At, Comments) written correctly in single call. Token fields are 0 (not null), proving atomic write-back works. Agent itself failed (`port_exit 1` — Claude CLI startup issue, separate from tracker).
+
+## [2026-05-31] Fix: recover_orphan_in_progress now writes metadata atomically
+
+**Problem**: `recover_orphan_in_progress` only called `Tracker.update_issue_state("Failed")` + separate `create_comment`. Error field and Completed At were not written.
+
+**Fix**: Replaced with `BitableAdapter.update_record_with_metadata` that writes Failed state + Error message + Completed At in one API call. Removed the separate `create_comment` call.
+
+**Files changed**: `elixir/lib/symphony_elixir/orchestrator.ex`
+
 ## [2026-05-31] Fix: Crash recovery for orphan "In Progress" issues
 
 **Problem**: Orchestrator crashed (port 3100 conflict at 19:25). On restart, `init/1` only cleaned terminal-state workspaces — "In Progress" issues were orphaned: no agent tracking them, no completion flow, no webhook, no MR comment. The orchestrator re-dispatched them as new, creating duplicate Claude processes.
@@ -200,3 +210,6 @@ Only Feishu Bitable adapter exists. The Tracker behaviour is already defined but
 [AI-REVIEW] Large commit detected: 211 lines added. Consider reviewing for AI Psychosis.
 [AI-REVIEW] Large commit detected: 717 lines added. Consider reviewing for AI Psychosis.
 [AI-REVIEW] Large commit detected: 254 lines added. Consider reviewing for AI Psychosis.
+[AI-REVIEW] Large commit detected: 301 lines added. Consider reviewing for AI Psychosis.
+[AI-REVIEW] Large commit detected: 302 lines added. Consider reviewing for AI Psychosis.
+[AI-REVIEW] Large commit detected: 333 lines added. Consider reviewing for AI Psychosis.

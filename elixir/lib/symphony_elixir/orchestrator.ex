@@ -1589,11 +1589,18 @@ defmodule SymphonyElixir.Orchestrator do
         Logger.warning("Found #{length(issues)} orphan In Progress issue(s) from previous orchestrator run")
 
         Enum.each(issues, fn %Issue{id: issue_id, identifier: identifier} ->
-          Tracker.update_issue_state(issue_id, "Failed")
+          # Atomic write: Failed state + error + completed_at in one API call
+          metadata = %{
+            state: "Failed",
+            error: "Orchestrator restart: agent session lost. Set back to Open to retry."
+          }
 
-          case BitableAdapter.create_comment(issue_id, "Orchestrator restart: agent session lost. Set back to Open to retry.") do
-            :ok -> :ok
-            {:error, reason} -> Logger.warning("Failed to comment on orphan issue #{issue_id}: #{inspect(reason)}")
+          case Tracker.adapter() do
+            BitableAdapter ->
+              BitableAdapter.update_record_with_metadata(issue_id, metadata)
+
+            _ ->
+              Tracker.update_issue_state(issue_id, "Failed")
           end
 
           cleanup_issue_workspace(identifier)

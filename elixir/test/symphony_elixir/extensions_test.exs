@@ -184,7 +184,7 @@ defmodule SymphonyElixir.ExtensionsTest do
 
     assert state_payload == %{
              "generated_at" => state_payload["generated_at"],
-             "counts" => %{"running" => 1, "retrying" => 1, "blocked" => 1},
+             "counts" => %{"running" => 1, "retrying" => 1, "blocked" => 1, "parents" => 0},
              "running" => [
                %{
                  "issue_id" => "issue-http",
@@ -231,6 +231,7 @@ defmodule SymphonyElixir.ExtensionsTest do
                  "last_event_at" => state_payload["blocked"] |> List.first() |> Map.fetch!("last_event_at")
                }
              ],
+             "parents" => [],
              "codex_totals" => %{
                "input_tokens" => 4,
                "output_tokens" => 8,
@@ -429,7 +430,7 @@ defmodule SymphonyElixir.ExtensionsTest do
     assert html =~ "Copy ID"
     assert html =~ "Codex update"
     assert html =~ "Details"
-    refute html =~ "Current progress"
+    refute html =~ "当前进度"
     refute html =~ "data-runtime-clock="
     refute html =~ "setInterval(refreshRuntimeClocks"
     refute html =~ "Refresh now"
@@ -442,11 +443,11 @@ defmodule SymphonyElixir.ExtensionsTest do
       |> element("#running-detail-toggle-issue-http")
       |> render_click()
 
-    assert expanded_html =~ "Current progress"
-    assert expanded_html =~ "Task"
+    assert expanded_html =~ "当前进度"
+    assert expanded_html =~ "任务"
     assert expanded_html =~ "Dashboard task"
     assert expanded_html =~ "Shows the current task summary"
-    assert expanded_html =~ "Blockers"
+    assert expanded_html =~ "卡点"
     assert expanded_html =~ "Next plan"
     assert expanded_html =~ "Last activity"
     assert expanded_html =~ "Workspace"
@@ -553,7 +554,7 @@ defmodule SymphonyElixir.ExtensionsTest do
 
     response = Req.get!("http://127.0.0.1:#{port}/api/v1/state")
     assert response.status == 200
-    assert response.body["counts"] == %{"running" => 1, "retrying" => 1, "blocked" => 1}
+    assert response.body["counts"] == %{"running" => 1, "retrying" => 1, "blocked" => 1, "parents" => 0}
 
     dashboard_css = Req.get!("http://127.0.0.1:#{port}/dashboard.css")
     assert dashboard_css.status == 200
