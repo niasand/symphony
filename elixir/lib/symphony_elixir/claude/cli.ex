@@ -212,6 +212,11 @@ defmodule SymphonyElixir.Claude.CLI do
   defp handle_result_event(on_message, payload, session) do
     conversation_id = Map.get(payload, "session_id") || session.conversation_id
     usage = usage_from_result(payload)
+    subtype = Map.get(payload, "subtype")
+
+    if subtype == "error_max_turns" do
+      Logger.info("Claude turn reached max turns tokens=#{usage.total_tokens} cost=#{usage.cost_usd}")
+    end
 
     if result_error?(payload) do
       emit_message(on_message, :turn_failed, %{payload: payload, usage: usage})
@@ -223,10 +228,22 @@ defmodule SymphonyElixir.Claude.CLI do
   end
 
   defp result_error?(payload) do
-    # error_max_turns is not a real failure — the task may have completed within the limit
-    # Only treat genuine errors as failures
-    Map.get(payload, "subtype") in ["error", "error_tool_use"] and
-      Map.get(payload, "is_error") == true
+    case Map.get(payload, "subtype") do
+      # error_max_turns: the turn was truncated, not failed.
+      # The agent runner's turn loop may continue with more invocations.
+      # Token data is still extracted via usage_from_result and emitted
+      # before this function is called.
+      "error_max_turns" ->
+        false
+
+      # Genuine errors — the turn actually failed.
+      subtype when subtype in ["error", "error_tool_use"] ->
+        Map.get(payload, "is_error") == true
+
+      # Unknown subtypes: treat as error only when is_error is explicitly true.
+      _ ->
+        Map.get(payload, "is_error") == true
+    end
   end
 
   defp usage_from_result(payload) when is_map(payload) do

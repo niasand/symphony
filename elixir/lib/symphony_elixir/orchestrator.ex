@@ -203,11 +203,11 @@ defmodule SymphonyElixir.Orchestrator do
     else
       Logger.info("Agent task completed for issue_id=#{issue_id} session_id=#{session_id}; scheduling active-state continuation check")
 
-      # Record token totals and notify tracker of completion
-      case update_tracker_completion(issue_id, running_entry) do
-        :ok -> :ok
-        {:error, reason} -> Logger.warning("Failed to update tracker completion for issue_id=#{issue_id}: #{inspect(reason)}")
-      end
+      # Record token totals and notify tracker of completion.
+      # Do NOT mark as "Resolved" here — the agent may have hit max_turns.
+      # The continuation retry will check the actual issue state and either
+      # re-dispatch (still active) or clean up (genuinely resolved).
+      update_tracker_token_metadata(issue_id, running_entry)
 
       state
       |> complete_issue(issue_id)
@@ -1933,7 +1933,10 @@ defmodule SymphonyElixir.Orchestrator do
 
   # ── Tracker status update helpers ──
 
-  defp update_tracker_completion(issue_id, running_entry) when is_binary(issue_id) do
+  # Write token metadata to tracker without changing issue state.
+  # State transitions ("Resolved"/"Failed") are handled by the
+  # continuation retry or the reconciliation loop, not here.
+  defp update_tracker_token_metadata(issue_id, running_entry) when is_binary(issue_id) do
     input_tokens = Map.get(running_entry, :codex_input_tokens, 0)
     output_tokens = Map.get(running_entry, :codex_output_tokens, 0)
     total_tokens = Map.get(running_entry, :codex_total_tokens, 0)
@@ -1942,7 +1945,6 @@ defmodule SymphonyElixir.Orchestrator do
     branch_name = read_git_branch(workspace_path)
 
     metadata = %{
-      state: "Resolved",
       input_tokens: input_tokens,
       output_tokens: output_tokens,
       total_tokens: total_tokens,
@@ -1952,14 +1954,18 @@ defmodule SymphonyElixir.Orchestrator do
 
     case Tracker.adapter() do
       SymphonyElixir.Feishu.Bitable.Adapter ->
-        SymphonyElixir.Feishu.Bitable.Adapter.update_record_with_metadata(issue_id, metadata)
+        case SymphonyElixir.Feishu.Bitable.Adapter.update_record_with_metadata(issue_id, metadata) do
+          :ok -> :ok
+          {:error, reason} ->
+            Logger.warning("Failed to update token metadata for issue_id=#{issue_id}: #{inspect(reason)}")
+        end
 
       _ ->
-        Tracker.update_issue_state(issue_id, "Resolved")
+        :ok
     end
   end
 
-  defp update_tracker_completion(_issue_id, _running_entry), do: :ok
+  defp update_tracker_token_metadata(_issue_id, _running_entry), do: :ok
 
   defp update_tracker_failure(issue_id, running_entry, reason) when is_binary(issue_id) do
     input_tokens = Map.get(running_entry, :codex_input_tokens, 0)

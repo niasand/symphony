@@ -1,3 +1,17 @@
+## [2026-05-31] Fix error_max_turns handling and tracker completion write-back
+
+**Problem 1 (P0)**: `result_error?` in Claude CLI didn't explicitly handle `error_max_turns` subtype. When Claude hit `--max-turns`, the result event was treated as an implicit non-error because the subtype wasn't in the explicit error list. Token data was extracted but the flow was fragile and hard to reason about.
+
+**Fix**: Rewrote `result_error?` with explicit `case` for `error_max_turns` (non-fatal soft completion), `error`/`error_tool_use` (genuine errors), and fallback. Added visibility logging in `handle_result_event` for max_turns events showing token count and cost.
+
+**Problem 2 (P1)**: `update_tracker_completion` in the orchestrator unconditionally set tracker state to "Resolved" when the agent exited normally. This was wrong when the agent hit max_turns — the task wasn't actually resolved, but the Bitable record was marked as Resolved, causing the continuation retry to find a terminal state and give up. Additionally, `update_record_with_metadata` in the Bitable adapter had no error logging.
+
+**Fix**: Replaced `update_tracker_completion` with `update_tracker_token_metadata` that writes token/retry/branch metadata WITHOUT changing the issue state. The continuation retry now properly checks the actual issue state and either re-dispatches (still active) or cleans up (genuinely resolved). Added debug/info/warning logging to `update_record_with_metadata` for all Bitable write outcomes.
+
+**Problem 3 (P2)**: Logger already writes to file — `LogFile.configure()` is called at OTP Application startup and removes the default console handler. No changes needed.
+
+**Files changed**: `elixir/lib/symphony_elixir/claude/cli.ex`, `elixir/lib/symphony_elixir/orchestrator.ex`, `elixir/lib/symphony_elixir/feishu/bitable/adapter.ex`
+
 [AI-REVIEW] Large commit detected: 849487 lines added. Consider reviewing for AI Psychosis.
 [AI-REVIEW] Large commit detected: 232 lines added. Consider reviewing for AI Psychosis.
 [AI-REVIEW] Large commit detected: 1541 lines added. Consider reviewing for AI Psychosis.

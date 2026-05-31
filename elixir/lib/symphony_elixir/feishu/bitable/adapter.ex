@@ -135,12 +135,19 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
       end
 
     if map_size(fields) > 0 do
-      Client.update_record(bitable_app_token(), bitable_table_id(), record_id, fields)
-      |> case do
-        {:ok, _} -> :ok
-        {:error, reason} -> {:error, reason}
+      Logger.debug("Bitable metadata update for #{record_id}: #{inspect(Map.keys(fields))}")
+
+      case Client.update_record(bitable_app_token(), bitable_table_id(), record_id, fields) do
+        {:ok, _data} ->
+          Logger.info("Bitable metadata updated for #{record_id} state=#{metadata[:state] || "unchanged"}")
+          :ok
+
+        {:error, reason} ->
+          Logger.warning("Bitable metadata update FAILED for #{record_id}: #{inspect(reason)} fields=#{inspect(Map.keys(fields))}")
+          {:error, reason}
       end
     else
+      Logger.debug("Bitable metadata update skipped for #{record_id}: no fields to update")
       :ok
     end
   end
