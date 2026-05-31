@@ -137,15 +137,20 @@ defmodule SymphonyElixir.Claude.CLI do
 
   defp maybe_add_positive_integer_option(args, _flag, _value), do: args
 
+  @last_lines_max 5
+  @last_line_bytes 500
+
   defp await_turn_completion(port, session, on_message) do
-    receive_loop(port, session, on_message, Config.settings!().claude.turn_timeout_ms, "", 0)
+    receive_loop(port, session, on_message, Config.settings!().claude.turn_timeout_ms, "", 0, [])
   end
 
-  defp receive_loop(port, session, on_message, timeout_ms, pending_line, pending_bytes) do
+  defp receive_loop(port, session, on_message, timeout_ms, pending_line, pending_bytes, last_lines) do
     receive do
       {^port, {:data, {:eol, chunk}}} ->
         line = pending_line <> to_string(chunk)
-        handle_stream_line(port, session, on_message, timeout_ms, line)
+        trimmed = String.slice(line, 0, @last_line_bytes)
+        updated_last = keep_last(last_lines, trimmed)
+        handle_stream_line(port, session, on_message, timeout_ms, line, updated_last)
 
       {^port, {:data, {:noeol, chunk}}} ->
         next_pending_line = pending_line <> to_string(chunk)
@@ -154,7 +159,7 @@ defmodule SymphonyElixir.Claude.CLI do
         if next_pending_bytes > @max_pending_bytes do
           {:error, {:turn_failed, :claude_output_exceeded_buffer_limit}}
         else
-          receive_loop(port, session, on_message, timeout_ms, next_pending_line, next_pending_bytes)
+          receive_loop(port, session, on_message, timeout_ms, next_pending_line, next_pending_bytes, last_lines)
         end
 
       {^port, {:exit_status, 0}} ->
@@ -162,14 +167,15 @@ defmodule SymphonyElixir.Claude.CLI do
         {:ok, %{result: :process_exited_clean, conversation_id: session.conversation_id}}
 
       {^port, {:exit_status, status}} ->
-        {:error, {:turn_failed, {:port_exit, status}}}
+        Logger.warning("Claude CLI port_exit=#{status} last_output=#{inspect(last_lines)}")
+        {:error, {:turn_failed, {:port_exit, status, last_lines}}}
     after
       timeout_ms ->
         {:error, :turn_timeout}
     end
   end
 
-  defp handle_stream_line(port, session, on_message, timeout_ms, line) do
+  defp handle_stream_line(port, session, on_message, timeout_ms, line, last_lines) do
     line = to_string(line)
 
     case Jason.decode(line) do
@@ -183,7 +189,7 @@ defmodule SymphonyElixir.Claude.CLI do
           message: extract_text_content(payload)
         })
 
-        receive_loop(port, session, on_message, timeout_ms, "", 0)
+        receive_loop(port, session, on_message, timeout_ms, "", 0, last_lines)
 
       {:ok, %{"type" => type} = payload} when type in ["tool_use", "tool_result"] ->
         emit_message(on_message, :notification, %{
@@ -192,11 +198,11 @@ defmodule SymphonyElixir.Claude.CLI do
           message: "#{type}: #{Map.get(payload, "subtype", "")}"
         })
 
-        receive_loop(port, session, on_message, timeout_ms, "", 0)
+        receive_loop(port, session, on_message, timeout_ms, "", 0, last_lines)
 
       {:ok, payload} ->
         emit_message(on_message, :notification, %{payload: payload, raw: line})
-        receive_loop(port, session, on_message, timeout_ms, "", 0)
+        receive_loop(port, session, on_message, timeout_ms, "", 0, last_lines)
 
       {:error, _reason} ->
         log_non_json_stream_line(line)
@@ -205,7 +211,7 @@ defmodule SymphonyElixir.Claude.CLI do
           emit_message(on_message, :malformed, %{payload: line, raw: line})
         end
 
-        receive_loop(port, session, on_message, timeout_ms, "", 0)
+        receive_loop(port, session, on_message, timeout_ms, "", 0, last_lines)
     end
   end
 
@@ -435,4 +441,11 @@ defmodule SymphonyElixir.Claude.CLI do
   end
 
   defp default_on_message(_message), do: :ok
+
+  defp keep_last(lines, new_line) when length(lines) >= @last_lines_max do
+    [_ | rest] = lines
+    rest ++ [new_line]
+  end
+
+  defp keep_last(lines, new_line), do: lines ++ [new_line]
 end
