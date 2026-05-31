@@ -91,6 +91,16 @@ defmodule SymphonyElixir.Config do
     end
   end
 
+  @spec agent_stall_timeout_ms() :: non_neg_integer()
+  def agent_stall_timeout_ms do
+    settings = settings!()
+
+    case settings.agent.kind do
+      "claude" -> settings.claude.stall_timeout_ms
+      _ -> settings.codex.stall_timeout_ms
+    end
+  end
+
   @spec validate!() :: :ok | {:error, term()}
   def validate! do
     with {:ok, settings} <- settings() do

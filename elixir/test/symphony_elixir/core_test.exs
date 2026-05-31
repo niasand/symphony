@@ -16,6 +16,7 @@ defmodule SymphonyElixir.CoreTest do
     assert config.tracker.active_states == ["Todo", "In Progress"]
     assert config.tracker.terminal_states == ["Closed", "Cancelled", "Canceled", "Duplicate", "Done"]
     assert config.tracker.assignee == nil
+    assert config.agent.kind == "codex"
     assert config.agent.max_turns == 20
 
     write_workflow_file!(Workflow.workflow_file_path(), poll_interval_ms: "invalid")

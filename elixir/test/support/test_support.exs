@@ -7,6 +7,7 @@ defmodule SymphonyElixir.TestSupport do
       import ExUnit.CaptureLog
 
       alias SymphonyElixir.AgentRunner
+      alias SymphonyElixir.Claude.CLI, as: ClaudeCLI
       alias SymphonyElixir.CLI
       alias SymphonyElixir.Codex.AppServer
       alias SymphonyElixir.Config
@@ -103,6 +104,7 @@ defmodule SymphonyElixir.TestSupport do
           workspace_root: Path.join(System.tmp_dir!(), "symphony_workspaces"),
           worker_ssh_hosts: [],
           worker_max_concurrent_agents_per_host: nil,
+          agent_kind: "codex",
           max_concurrent_agents: 10,
           max_turns: 20,
           max_retry_backoff_ms: 300_000,
@@ -114,6 +116,13 @@ defmodule SymphonyElixir.TestSupport do
           codex_turn_timeout_ms: 3_600_000,
           codex_read_timeout_ms: 5_000,
           codex_stall_timeout_ms: 300_000,
+          claude_command: "claude",
+          claude_model: nil,
+          claude_max_turns_per_invocation: nil,
+          claude_skip_permissions: false,
+          claude_system_prompt: nil,
+          claude_turn_timeout_ms: 3_600_000,
+          claude_stall_timeout_ms: 300_000,
           hook_after_create: nil,
           hook_before_run: nil,
           hook_after_run: nil,
@@ -140,6 +149,7 @@ defmodule SymphonyElixir.TestSupport do
     workspace_root = Keyword.get(config, :workspace_root)
     worker_ssh_hosts = Keyword.get(config, :worker_ssh_hosts)
     worker_max_concurrent_agents_per_host = Keyword.get(config, :worker_max_concurrent_agents_per_host)
+    agent_kind = Keyword.get(config, :agent_kind)
     max_concurrent_agents = Keyword.get(config, :max_concurrent_agents)
     max_turns = Keyword.get(config, :max_turns)
     max_retry_backoff_ms = Keyword.get(config, :max_retry_backoff_ms)
@@ -151,6 +161,13 @@ defmodule SymphonyElixir.TestSupport do
     codex_turn_timeout_ms = Keyword.get(config, :codex_turn_timeout_ms)
     codex_read_timeout_ms = Keyword.get(config, :codex_read_timeout_ms)
     codex_stall_timeout_ms = Keyword.get(config, :codex_stall_timeout_ms)
+    claude_command = Keyword.get(config, :claude_command)
+    claude_model = Keyword.get(config, :claude_model)
+    claude_max_turns_per_invocation = Keyword.get(config, :claude_max_turns_per_invocation)
+    claude_skip_permissions = Keyword.get(config, :claude_skip_permissions)
+    claude_system_prompt = Keyword.get(config, :claude_system_prompt)
+    claude_turn_timeout_ms = Keyword.get(config, :claude_turn_timeout_ms)
+    claude_stall_timeout_ms = Keyword.get(config, :claude_stall_timeout_ms)
     hook_after_create = Keyword.get(config, :hook_after_create)
     hook_before_run = Keyword.get(config, :hook_before_run)
     hook_after_run = Keyword.get(config, :hook_after_run)
@@ -180,6 +197,7 @@ defmodule SymphonyElixir.TestSupport do
         "  root: #{yaml_value(workspace_root)}",
         worker_yaml(worker_ssh_hosts, worker_max_concurrent_agents_per_host),
         "agent:",
+        "  kind: #{yaml_value(agent_kind)}",
         "  max_concurrent_agents: #{yaml_value(max_concurrent_agents)}",
         "  max_turns: #{yaml_value(max_turns)}",
         "  max_retry_backoff_ms: #{yaml_value(max_retry_backoff_ms)}",
@@ -192,6 +210,15 @@ defmodule SymphonyElixir.TestSupport do
         "  turn_timeout_ms: #{yaml_value(codex_turn_timeout_ms)}",
         "  read_timeout_ms: #{yaml_value(codex_read_timeout_ms)}",
         "  stall_timeout_ms: #{yaml_value(codex_stall_timeout_ms)}",
+        claude_yaml(
+          claude_command,
+          claude_model,
+          claude_max_turns_per_invocation,
+          claude_skip_permissions,
+          claude_system_prompt,
+          claude_turn_timeout_ms,
+          claude_stall_timeout_ms
+        ),
         hooks_yaml(hook_after_create, hook_before_run, hook_after_run, hook_before_remove, hook_timeout_ms),
         observability_yaml(observability_enabled, observability_refresh_ms, observability_render_interval_ms),
         server_yaml(server_port, server_host),
@@ -252,6 +279,20 @@ defmodule SymphonyElixir.TestSupport do
         "  max_concurrent_agents_per_host: #{yaml_value(max_concurrent_agents_per_host)}"
     ]
     |> Enum.reject(&(&1 in [nil, false]))
+    |> Enum.join("\n")
+  end
+
+  defp claude_yaml(command, model, max_turns_per_invocation, skip_permissions, system_prompt, turn_timeout_ms, stall_timeout_ms) do
+    [
+      "claude:",
+      "  command: #{yaml_value(command)}",
+      "  model: #{yaml_value(model)}",
+      "  max_turns_per_invocation: #{yaml_value(max_turns_per_invocation)}",
+      "  skip_permissions: #{yaml_value(skip_permissions)}",
+      "  system_prompt: #{yaml_value(system_prompt)}",
+      "  turn_timeout_ms: #{yaml_value(turn_timeout_ms)}",
+      "  stall_timeout_ms: #{yaml_value(stall_timeout_ms)}"
+    ]
     |> Enum.join("\n")
   end
 

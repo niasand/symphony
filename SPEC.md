@@ -409,6 +409,11 @@ Fields:
 
 Fields:
 
+- `kind` (string, OPTIONAL)
+  - Default: `codex`.
+  - Selects the coding-agent backend when an implementation ships more than one.
+  - Baseline conforming value: `codex`.
+  - Implementations MAY support additional backend values as extensions.
 - `max_concurrent_agents` (integer)
   - Default: `10`
   - Changes SHOULD be re-applied at runtime and affect subsequent dispatch decisions.
@@ -583,6 +588,7 @@ not require recognizing or validating extension fields unless that extension is 
 - `hooks.after_run`: shell script or null
 - `hooks.before_remove`: shell script or null
 - `hooks.timeout_ms`: integer, default `60000`
+- `agent.kind`: string, default `codex`
 - `agent.max_concurrent_agents`: integer, default `10`
 - `agent.max_turns`: integer, default `20`
 - `agent.max_retry_backoff_ms`: integer, default `300000` (5m)

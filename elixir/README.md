@@ -86,7 +86,7 @@ Optional flags:
 - `--port` also starts the Phoenix observability service (default: disabled)
 
 The `WORKFLOW.md` file uses YAML front matter for configuration, plus a Markdown body used as the
-Codex session prompt.
+agent session prompt.
 
 Minimal example:
 
@@ -101,6 +101,7 @@ hooks:
   after_create: |
     git clone git@github.com:your-org/your-repo.git .
 agent:
+  kind: codex
   max_concurrent_agents: 10
   max_turns: 20
 codex:
@@ -115,6 +116,7 @@ Title: {{ issue.title }} Body: {{ issue.description }}
 Notes:
 
 - If a value is missing, defaults are used.
+- `agent.kind` chooses the coding backend. Supported values are `codex` (default) and `claude`.
 - Safer Codex defaults are used when policy fields are omitted:
   - `codex.approval_policy` defaults to `{"reject":{"sandbox_approval":true,"rules":true,"mcp_elicitations":true}}`
   - `codex.thread_sandbox` defaults to `workspace-write`
@@ -124,8 +126,13 @@ Notes:
 - When `codex.turn_sandbox_policy` is set explicitly, Symphony passes the map through to Codex
   unchanged. Compatibility then depends on the targeted Codex app-server version rather than local
   Symphony validation.
-- `agent.max_turns` caps how many back-to-back Codex turns Symphony will run in a single agent
+- `agent.max_turns` caps how many back-to-back agent turns Symphony will run in a single agent
   invocation when a turn completes normally but the issue is still in an active state. Default: `20`.
+- For Claude Code, set `agent.kind: claude` and configure `claude.command` as the Claude executable.
+  Symphony runs `claude -p <prompt> --output-format stream-json` once per turn and resumes the
+  returned Claude session ID on continuation turns. Optional Claude settings are `claude.model`,
+  `claude.max_turns_per_invocation`, `claude.skip_permissions`, `claude.system_prompt`,
+  `claude.turn_timeout_ms`, and `claude.stall_timeout_ms`.
 - If the Markdown body is blank, Symphony uses a default prompt template that includes the issue
   identifier, title, and body.
 - Use `hooks.after_create` to bootstrap a fresh workspace. For a Git-backed repo, you can run
@@ -148,6 +155,20 @@ hooks:
     git clone --depth 1 "$SOURCE_REPO_URL" .
 codex:
   command: "$CODEX_BIN --config 'model=\"gpt-5.5\"' app-server"
+```
+
+Claude Code example:
+
+```yaml
+agent:
+  kind: claude
+  max_concurrent_agents: 5
+  max_turns: 10
+claude:
+  command: claude
+  model: claude-sonnet-4-20250514
+  max_turns_per_invocation: 5
+  skip_permissions: true
 ```
 
 - If `WORKFLOW.md` is missing or has invalid YAML at startup, Symphony does not boot.
