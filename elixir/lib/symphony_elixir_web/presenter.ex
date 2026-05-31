@@ -103,6 +103,7 @@ defmodule SymphonyElixirWeb.Presenter do
     %{
       issue_id: entry.issue_id,
       issue_identifier: entry.identifier,
+      issue: entry_issue_payload(entry),
       state: entry.state,
       worker_host: Map.get(entry, :worker_host),
       workspace_path: Map.get(entry, :workspace_path),
@@ -152,6 +153,7 @@ defmodule SymphonyElixirWeb.Presenter do
     %{
       worker_host: Map.get(running, :worker_host),
       workspace_path: Map.get(running, :workspace_path),
+      issue: entry_issue_payload(running),
       session_id: running.session_id,
       turn_count: Map.get(running, :turn_count, 0),
       state: running.state,
@@ -190,6 +192,18 @@ defmodule SymphonyElixirWeb.Presenter do
       last_event_at: iso8601(blocked.last_codex_timestamp)
     }
   end
+
+  defp entry_issue_payload(entry) do
+    issue = Map.get(entry, :issue)
+
+    %{
+      title: issue_field(issue, :title),
+      description: issue_field(issue, :description)
+    }
+  end
+
+  defp issue_field(issue, field) when is_map(issue), do: Map.get(issue, field)
+  defp issue_field(_issue, _field), do: nil
 
   defp workspace_path(issue_identifier, running, retry, blocked) do
     (running && Map.get(running, :workspace_path)) ||

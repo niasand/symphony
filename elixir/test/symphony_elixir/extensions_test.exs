@@ -347,6 +347,10 @@ defmodule SymphonyElixir.ExtensionsTest do
                %{
                  "issue_id" => "issue-http",
                  "issue_identifier" => "MT-HTTP",
+                 "issue" => %{
+                   "title" => "Dashboard task",
+                   "description" => "Shows the current task summary"
+                 },
                  "state" => "In Progress",
                  "worker_host" => nil,
                  "workspace_path" => nil,
@@ -409,6 +413,10 @@ defmodule SymphonyElixir.ExtensionsTest do
              "running" => %{
                "worker_host" => nil,
                "workspace_path" => nil,
+               "issue" => %{
+                 "title" => "Dashboard task",
+                 "description" => "Shows the current task summary"
+               },
                "session_id" => "thread-http",
                "turn_count" => 7,
                "state" => "In Progress",
@@ -593,6 +601,9 @@ defmodule SymphonyElixir.ExtensionsTest do
       |> render_click()
 
     assert expanded_html =~ "Current progress"
+    assert expanded_html =~ "Task"
+    assert expanded_html =~ "Dashboard task"
+    assert expanded_html =~ "Shows the current task summary"
     assert expanded_html =~ "Blockers"
     assert expanded_html =~ "Next plan"
     assert expanded_html =~ "Last activity"
@@ -612,6 +623,13 @@ defmodule SymphonyElixir.ExtensionsTest do
         %{
           issue_id: "issue-http",
           identifier: "MT-HTTP",
+          issue: %Issue{
+            id: "issue-http",
+            identifier: "MT-HTTP",
+            state: "In Progress",
+            title: "Dashboard task",
+            description: "Shows the current task summary"
+          },
           state: "In Progress",
           session_id: "thread-http",
           turn_count: 8,
@@ -741,6 +759,13 @@ defmodule SymphonyElixir.ExtensionsTest do
         %{
           issue_id: "issue-http",
           identifier: "MT-HTTP",
+          issue: %Issue{
+            id: "issue-http",
+            identifier: "MT-HTTP",
+            state: "In Progress",
+            title: "Dashboard task",
+            description: "Shows the current task summary"
+          },
           state: "In Progress",
           session_id: "thread-http",
           turn_count: 7,

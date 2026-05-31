@@ -125,29 +125,38 @@ defmodule SymphonyElixir.Config do
   end
 
   defp validate_semantics(settings) do
-    cond do
-      is_nil(settings.tracker.kind) ->
-        {:error, :missing_tracker_kind}
-
-      settings.tracker.kind not in ["linear", "memory", "bitable"] ->
-        {:error, {:unsupported_tracker_kind, settings.tracker.kind}}
-
-      settings.tracker.kind == "linear" and not is_binary(settings.tracker.api_key) ->
-        {:error, :missing_linear_api_token}
-
-      settings.tracker.kind == "linear" and not is_binary(settings.tracker.project_slug) ->
-        {:error, :missing_linear_project_slug}
-
-      settings.tracker.kind == "bitable" and not is_binary(settings.tracker.bitable_app_token) ->
-        {:error, :missing_bitable_app_token}
-
-      settings.tracker.kind == "bitable" and not is_binary(settings.tracker.bitable_table_id) ->
-        {:error, :missing_bitable_table_id}
-
-      true ->
-        :ok
+    with :ok <- validate_tracker_kind(settings.tracker.kind),
+         :ok <- validate_linear_tracker(settings.tracker) do
+      validate_bitable_tracker(settings.tracker)
     end
   end
+
+  defp validate_tracker_kind(nil), do: {:error, :missing_tracker_kind}
+  defp validate_tracker_kind(kind) when kind in ["linear", "memory", "bitable"], do: :ok
+  defp validate_tracker_kind(kind), do: {:error, {:unsupported_tracker_kind, kind}}
+
+  defp validate_linear_tracker(%{kind: "linear", api_key: api_key}) when not is_binary(api_key) do
+    {:error, :missing_linear_api_token}
+  end
+
+  defp validate_linear_tracker(%{kind: "linear", project_slug: project_slug})
+       when not is_binary(project_slug) do
+    {:error, :missing_linear_project_slug}
+  end
+
+  defp validate_linear_tracker(_tracker), do: :ok
+
+  defp validate_bitable_tracker(%{kind: "bitable", bitable_app_token: app_token})
+       when not is_binary(app_token) do
+    {:error, :missing_bitable_app_token}
+  end
+
+  defp validate_bitable_tracker(%{kind: "bitable", bitable_table_id: table_id})
+       when not is_binary(table_id) do
+    {:error, :missing_bitable_table_id}
+  end
+
+  defp validate_bitable_tracker(_tracker), do: :ok
 
   defp format_config_error(reason) do
     case reason do

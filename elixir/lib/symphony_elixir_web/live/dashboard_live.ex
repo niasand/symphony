@@ -433,12 +433,26 @@ defmodule SymphonyElixirWeb.DashboardLive do
 
   defp running_summary_items(entry, now) do
     [
+      {"Task", task_summary(entry)},
       {"Current progress", current_progress_summary(entry, now)},
       {"Blockers", blocker_summary(entry)},
       {"Next plan", next_plan_summary(entry)},
       {"Last activity", last_activity_summary(entry)},
       {"Workspace", workspace_summary(entry)}
     ]
+  end
+
+  defp task_summary(entry) do
+    issue = Map.get(entry, :issue) || %{}
+    title = issue |> Map.get(:title) |> blank_to_nil()
+    description = issue |> Map.get(:description) |> blank_to_nil()
+
+    cond do
+      title && description -> "#{title}: #{truncate_summary(description)}"
+      title -> title
+      description -> truncate_summary(description)
+      true -> "Task title and description not reported yet."
+    end
   end
 
   defp current_progress_summary(entry, now) do
@@ -505,6 +519,22 @@ defmodule SymphonyElixirWeb.DashboardLive do
 
     "#{host} · #{path}"
   end
+
+  defp blank_to_nil(value) when is_binary(value) do
+    value = String.trim(value)
+    if value == "", do: nil, else: value
+  end
+
+  defp blank_to_nil(_value), do: nil
+
+  defp truncate_summary(value) when byte_size(value) > 240 do
+    value
+    |> String.slice(0, 240)
+    |> String.trim()
+    |> Kernel.<>("...")
+  end
+
+  defp truncate_summary(value), do: value
 
   defp running_detail_expanded?(expanded_running_details, entry) do
     MapSet.member?(expanded_running_details, running_entry_key(entry))

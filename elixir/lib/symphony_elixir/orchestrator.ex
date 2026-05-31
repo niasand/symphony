@@ -8,6 +8,7 @@ defmodule SymphonyElixir.Orchestrator do
   import Bitwise, only: [<<<: 2]
 
   alias SymphonyElixir.{AgentRunner, Config, StatusDashboard, Tracker, Workspace}
+  alias SymphonyElixir.Feishu.Bitable.Adapter, as: BitableAdapter
   alias SymphonyElixir.Linear.Issue
 
   @continuation_retry_delay_ms 1_000
@@ -1953,9 +1954,11 @@ defmodule SymphonyElixir.Orchestrator do
     }
 
     case Tracker.adapter() do
-      SymphonyElixir.Feishu.Bitable.Adapter ->
-        case SymphonyElixir.Feishu.Bitable.Adapter.update_record_with_metadata(issue_id, metadata) do
-          :ok -> :ok
+      BitableAdapter ->
+        case BitableAdapter.update_record_with_metadata(issue_id, metadata) do
+          :ok ->
+            :ok
+
           {:error, reason} ->
             Logger.warning("Failed to update token metadata for issue_id=#{issue_id}: #{inspect(reason)}")
         end
@@ -1987,8 +1990,8 @@ defmodule SymphonyElixir.Orchestrator do
     }
 
     case Tracker.adapter() do
-      SymphonyElixir.Feishu.Bitable.Adapter ->
-        SymphonyElixir.Feishu.Bitable.Adapter.update_record_with_metadata(issue_id, metadata)
+      BitableAdapter ->
+        BitableAdapter.update_record_with_metadata(issue_id, metadata)
 
       _ ->
         :ok
