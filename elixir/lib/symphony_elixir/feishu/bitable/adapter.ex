@@ -205,7 +205,7 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
   end
 
   defp format_timestamp do
-    DateTime.utc_now() |> Calendar.strftime("%Y-%m-%d %H:%M:%S")
+    DateTime.utc_now() |> DateTime.add(28800, :second) |> Calendar.strftime("%Y-%m-%d %H:%M:%S")
   end
 
   defp config_module, do: SymphonyElixir.Config
