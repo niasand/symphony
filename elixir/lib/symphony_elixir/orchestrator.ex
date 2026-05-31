@@ -291,11 +291,8 @@ defmodule SymphonyElixir.Orchestrator do
       # 1. Create Merge Request if workspace has a git repo with commits
       mr_url = maybe_create_merge_request(workspace_path, identifier)
 
-      # 2. Update tracker state to "Resolved"
-      Tracker.update_issue_state(issue_id, "Resolved")
-
-      # 3. Write token metadata to tracker (branch, MR URL, tokens)
-      update_tracker_completion_metadata(issue_id, running_entry, mr_url)
+      # 2. Update tracker: state + metadata in a single write (avoids partial updates on crash)
+      finalize_tracker_completion(issue_id, "Resolved", running_entry, mr_url)
 
       # 4. Send Feishu webhook notification
       send_completion_webhook(running_entry, mr_url)
@@ -388,11 +385,8 @@ defmodule SymphonyElixir.Orchestrator do
     _workspace_path = Map.get(running_entry, :workspace_path)
     identifier = Map.get(running_entry, :identifier, issue_id)
 
-    # Mark sub-task as resolved in tracker
-    Tracker.update_issue_state(issue_id, "Resolved")
-
-    # Write token metadata
-    update_tracker_completion_metadata(issue_id, running_entry, nil)
+    # Mark sub-task as resolved in tracker (single atomic write)
+    finalize_tracker_completion(issue_id, "Resolved", running_entry, nil)
 
     cleanup_issue_workspace(identifier, Map.get(running_entry, :worker_host))
 
@@ -453,10 +447,8 @@ defmodule SymphonyElixir.Orchestrator do
 
     identifier = Map.get(running_entry, :identifier, issue_id)
 
-    # Mark parent as resolved
-    Tracker.update_issue_state(issue_id, "Resolved")
-
-    update_tracker_completion_metadata(issue_id, running_entry, nil)
+    # Mark parent as resolved (single atomic write)
+    finalize_tracker_completion(issue_id, "Resolved", running_entry, nil)
     send_completion_webhook(running_entry, nil)
 
     # Cleanup
@@ -1001,11 +993,17 @@ defmodule SymphonyElixir.Orchestrator do
     terminal_states = terminal_state_set()
     decomposition_config = Config.settings!().decomposition
 
+    Logger.info("choose_issues: #{length(issues)} candidates, decomposition.enabled=#{decomposition_config.enabled}, threshold=#{decomposition_config.description_length_threshold}")
+
     issues
     |> sort_issues_for_dispatch()
     |> Enum.reduce(state, fn issue, state_acc ->
       if should_dispatch_issue?(issue, state_acc, active_states, terminal_states) do
-        case ComplexityClassifier.classify(issue, decomposition_config) do
+        classification = ComplexityClassifier.classify(issue, decomposition_config)
+        desc_len = if is_binary(issue.description), do: byte_size(issue.description), else: 0
+        Logger.info("choose_issues: issue=#{issue_context(issue)} classify=#{classification} desc_len=#{desc_len} threshold=#{decomposition_config.description_length_threshold}")
+
+        case classification do
           :complex when decomposition_config.enabled ->
             dispatch_planner(state_acc, issue)
 
@@ -2431,20 +2429,17 @@ defmodule SymphonyElixir.Orchestrator do
 
   defp maybe_create_merge_request(_workspace_path, _identifier), do: nil
 
-  defp update_tracker_completion_metadata(issue_id, running_entry, mr_url) when is_binary(issue_id) do
-    input_tokens = Map.get(running_entry, :codex_input_tokens, 0)
-    output_tokens = Map.get(running_entry, :codex_output_tokens, 0)
-    total_tokens = Map.get(running_entry, :codex_total_tokens, 0)
-    retry_count = Map.get(running_entry, :retry_attempt, 0)
-    workspace_path = Map.get(running_entry, :workspace_path)
-    branch_name = read_git_branch(workspace_path)
-
+  # Atomic tracker update: state + metadata in a single Bitable API call.
+  # Prevents partial writes (e.g. state updated but tokens lost on crash).
+  defp finalize_tracker_completion(issue_id, state_name, running_entry, mr_url)
+       when is_binary(issue_id) and is_binary(state_name) do
     metadata = %{
-      input_tokens: input_tokens,
-      output_tokens: output_tokens,
-      total_tokens: total_tokens,
-      retry_count: retry_count,
-      branch_name: branch_name,
+      state: state_name,
+      input_tokens: Map.get(running_entry, :codex_input_tokens, 0),
+      output_tokens: Map.get(running_entry, :codex_output_tokens, 0),
+      total_tokens: Map.get(running_entry, :codex_total_tokens, 0),
+      retry_count: Map.get(running_entry, :retry_attempt, 0),
+      branch_name: read_git_branch(Map.get(running_entry, :workspace_path)),
       mr_url: mr_url
     }
 
@@ -2455,15 +2450,17 @@ defmodule SymphonyElixir.Orchestrator do
             :ok
 
           {:error, reason} ->
-            Logger.warning("Failed to update completion metadata for issue_id=#{issue_id}: #{inspect(reason)}")
+            Logger.warning("Failed to finalize tracker for issue_id=#{issue_id}: #{inspect(reason)}")
+            # Fallback: at least set the state even if metadata fails
+            Tracker.update_issue_state(issue_id, state_name)
         end
 
       _ ->
-        :ok
+        Tracker.update_issue_state(issue_id, state_name)
     end
   end
 
-  defp update_tracker_completion_metadata(_issue_id, _running_entry, _mr_url), do: :ok
+  defp finalize_tracker_completion(_issue_id, _state_name, _running_entry, _mr_url), do: :ok
 
   defp send_completion_webhook(running_entry, mr_url) do
     notification = %{
@@ -2492,7 +2489,7 @@ defmodule SymphonyElixir.Orchestrator do
 
   # ── Tracker status update helpers ──
 
-  # Replaced by update_tracker_completion_metadata/3 which includes MR URL
+  # Replaced by finalize_tracker_completion/4 — atomic state + metadata write
 
   defp update_tracker_failure(issue_id, running_entry, reason) when is_binary(issue_id) do
     input_tokens = Map.get(running_entry, :codex_input_tokens, 0)

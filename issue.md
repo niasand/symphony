@@ -1,3 +1,15 @@
+## [2026-05-31] Fix: Atomic tracker write-back — prevent partial metadata on crash
+
+**Problem**: `handle_normal_agent_completion` made two separate Bitable API calls: `Tracker.update_issue_state("Resolved")` then `update_tracker_completion_metadata`. If orchestrator crashed between them, Status was updated but Token fields stayed null. Task "实现 Symphony 完整任务生命周期闭环" (recvlc7i5EESer) hit this: Status=Resolved, Token In/Out/Total all null.
+
+**Root cause**: Non-atomic two-step write. Crash between step 1 and step 2 → partial state. Agent also wrote "Completed by Claude" comment directly (not via orchestrator), further confirming orchestrator never reached the metadata step.
+
+**Fix**: Replaced `update_tracker_completion_metadata/3` with `finalize_tracker_completion/4` that includes `state` in the metadata map. For Bitable adapter, `update_record_with_metadata` now writes Status + Completed At + tokens + branch + MR URL in a **single API call**. Fallback: if metadata write fails, still calls `Tracker.update_issue_state` to ensure state is set.
+
+**Data cleanup**: Task #5 token fields filled with 0 (actual data unrecoverable). Task #6 (recvlcnEGVq8Zg, decomposition test stuck in "In Progress" with 429 error) reset to "Failed".
+
+**Files changed**: `elixir/lib/symphony_elixir/orchestrator.ex`
+
 ## [2026-05-31] Fix: Crash recovery for orphan "In Progress" issues
 
 **Problem**: Orchestrator crashed (port 3100 conflict at 19:25). On restart, `init/1` only cleaned terminal-state workspaces — "In Progress" issues were orphaned: no agent tracking them, no completion flow, no webhook, no MR comment. The orchestrator re-dispatched them as new, creating duplicate Claude processes.

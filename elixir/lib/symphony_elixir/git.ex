@@ -3,6 +3,8 @@ defmodule SymphonyElixir.Git do
   Git operations for Symphony task lifecycle.
 
   Handles branch creation and Merge Request creation in agent workspaces.
+  In worktree mode, branch creation is skipped since the branch is created
+  during `git worktree add`.
   """
 
   require Logger
@@ -117,7 +119,7 @@ defmodule SymphonyElixir.Git do
         :ok
 
       _ ->
-        # Not a git repo — initialize one
+        # Not a git repo (and not a worktree) — initialize one
         case System.cmd("git", ["init"], cd: workspace_path, stderr_to_stdout: true) do
           {_, 0} ->
             Logger.info("Initialized git repo in workspace=#{workspace_path}")
@@ -131,7 +133,17 @@ defmodule SymphonyElixir.Git do
   end
 
   defp checkout_base_branch(workspace_path) do
-    # Try main first, then master
+    # In worktree mode, the workspace is already on a symphony/* branch — skip checkout
+    case System.cmd("git", ["branch", "--show-current"], cd: workspace_path, stderr_to_stdout: true) do
+      {"symphony/" <> _, 0} ->
+        :ok
+
+      _ ->
+        checkout_main_or_master(workspace_path)
+    end
+  end
+
+  defp checkout_main_or_master(workspace_path) do
     case System.cmd("git", ["checkout", "main"], cd: workspace_path, stderr_to_stdout: true) do
       {_, 0} ->
         System.cmd("git", ["pull", "--ff-only"], cd: workspace_path, stderr_to_stdout: true)
@@ -152,6 +164,21 @@ defmodule SymphonyElixir.Git do
   end
 
   defp create_and_checkout_branch(workspace_path, branch_name) do
+    # In worktree mode, already on the correct branch — skip
+    case System.cmd("git", ["branch", "--show-current"], cd: workspace_path, stderr_to_stdout: true) do
+      {current, 0} ->
+        if String.trim(current) == branch_name do
+          :ok
+        else
+          do_create_and_checkout_branch(workspace_path, branch_name)
+        end
+
+      _ ->
+        do_create_and_checkout_branch(workspace_path, branch_name)
+    end
+  end
+
+  defp do_create_and_checkout_branch(workspace_path, branch_name) do
     case System.cmd("git", ["checkout", "-b", branch_name], cd: workspace_path, stderr_to_stdout: true) do
       {_, 0} ->
         :ok

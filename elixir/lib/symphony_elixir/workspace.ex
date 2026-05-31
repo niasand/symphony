@@ -1,6 +1,14 @@
 defmodule SymphonyElixir.Workspace do
   @moduledoc """
   Creates isolated per-issue workspaces for parallel Codex agents.
+
+  When a source_repo is configured (auto-detected from WORKFLOW.md location),
+  workspaces are created as git worktrees of the source repository.
+  This gives each workspace full repository context, remote access, and the
+  ability to push branches and create PRs.
+
+  Falls back to plain directories when source_repo is unavailable
+  (e.g. remote workers or detection failure).
   """
 
   require Logger
@@ -34,7 +42,23 @@ defmodule SymphonyElixir.Workspace do
   defp ensure_workspace(workspace, nil) do
     cond do
       File.dir?(workspace) ->
-        {:ok, workspace, false}
+        if worktree?(workspace) do
+          # Existing worktree — reuse directly
+          {:ok, workspace, false}
+        else
+          # Existing directory but not a worktree.
+          # In worktree mode, replace with a proper worktree.
+          # In fallback mode (no source_repo), reuse as-is.
+          case source_repo() do
+            nil ->
+              {:ok, workspace, false}
+
+            _repo_path ->
+              Logger.info("Replacing non-worktree directory with worktree: #{workspace}")
+              File.rm_rf!(workspace)
+              create_workspace(workspace)
+          end
+        end
 
       File.exists?(workspace) ->
         File.rm_rf!(workspace)
@@ -79,9 +103,85 @@ defmodule SymphonyElixir.Workspace do
   end
 
   defp create_workspace(workspace) do
-    File.rm_rf!(workspace)
-    File.mkdir_p!(workspace)
-    {:ok, workspace, true}
+    case source_repo() do
+      nil ->
+        File.rm_rf!(workspace)
+        File.mkdir_p!(workspace)
+        {:ok, workspace, true}
+
+      repo_path ->
+        branch = "symphony/#{Path.basename(workspace)}"
+        safe_create_worktree(repo_path, workspace, branch)
+    end
+  end
+
+  defp safe_create_worktree(repo_path, workspace, branch) do
+    workspace |> Path.dirname() |> File.mkdir_p!()
+
+    case System.cmd("git", ["worktree", "add", workspace, "-b", branch, "HEAD"],
+           cd: repo_path,
+           stderr_to_stdout: true
+         ) do
+      {_output, 0} ->
+        Logger.info("Created worktree for branch=#{branch} at #{workspace}")
+        {:ok, workspace, true}
+
+      {_error, _} ->
+        case System.cmd("git", ["worktree", "add", workspace, branch],
+               cd: repo_path,
+               stderr_to_stdout: true
+             ) do
+          {_output2, 0} ->
+            Logger.info("Created worktree from existing branch=#{branch} at #{workspace}")
+            {:ok, workspace, true}
+
+          {error2, _} ->
+            Logger.warning("Worktree creation failed, attempting cleanup: #{String.slice(error2, 0, 200)}")
+
+            System.cmd("git", ["worktree", "remove", "--force", workspace],
+              cd: repo_path,
+              stderr_to_stdout: true
+            )
+
+            File.rm_rf(workspace)
+
+            case System.cmd("git", ["worktree", "add", workspace, "-b", branch, "HEAD"],
+                   cd: repo_path,
+                   stderr_to_stdout: true
+                 ) do
+              {_output3, 0} ->
+                Logger.info("Created worktree after cleanup for branch=#{branch}")
+                {:ok, workspace, true}
+
+              {error3, status} ->
+                Logger.warning("Worktree creation failed after cleanup: status=#{status} #{String.slice(error3, 0, 200)}")
+                File.rm_rf!(workspace)
+                File.mkdir_p!(workspace)
+                {:ok, workspace, true}
+            end
+        end
+    end
+  end
+
+  defp source_repo do
+    case Config.settings() do
+      {:ok, settings} -> settings.workspace.source_repo
+      _ -> nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  defp worktree?(workspace) when is_binary(workspace) do
+    git_file = Path.join(workspace, ".git")
+
+    case File.read(git_file) do
+      {:ok, content} ->
+        String.contains?(content, "gitdir:")
+
+      _ ->
+        false
+    end
   end
 
   @spec remove(Path.t()) :: {:ok, [String.t()]} | {:error, term(), String.t()}
@@ -94,7 +194,7 @@ defmodule SymphonyElixir.Workspace do
         case validate_workspace_path(workspace, nil) do
           :ok ->
             maybe_run_before_remove_hook(workspace, nil)
-            File.rm_rf(workspace)
+            remove_workspace(workspace)
 
           {:error, reason} ->
             {:error, reason, ""}
@@ -124,6 +224,35 @@ defmodule SymphonyElixir.Workspace do
 
       {:error, reason} ->
         {:error, reason, ""}
+    end
+  end
+
+  defp remove_workspace(workspace) do
+    if worktree?(workspace) do
+      repo = source_repo()
+
+      case System.cmd("git", ["worktree", "remove", "--force", workspace],
+             cd: repo || workspace,
+             stderr_to_stdout: true
+           ) do
+        {_, 0} ->
+          branch = "symphony/#{Path.basename(workspace)}"
+
+          if repo do
+            System.cmd("git", ["branch", "-D", branch],
+              cd: repo,
+              stderr_to_stdout: true
+            )
+          end
+
+          {:ok, []}
+
+        {output, status} ->
+          Logger.warning("git worktree remove failed: status=#{status} #{String.slice(output, 0, 200)}")
+          File.rm_rf(workspace)
+      end
+    else
+      File.rm_rf(workspace)
     end
   end
 

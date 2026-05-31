@@ -95,12 +95,13 @@ defmodule SymphonyElixir.Config.Schema do
     @primary_key false
     embedded_schema do
       field(:root, :string)
+      field(:source_repo, :string)
     end
 
     @spec changeset(%__MODULE__{}, map()) :: Ecto.Changeset.t()
     def changeset(schema, attrs) do
       schema
-      |> cast(attrs, [:root], empty_values: [])
+      |> cast(attrs, [:root, :source_repo], empty_values: [])
     end
   end
 
@@ -490,7 +491,8 @@ defmodule SymphonyElixir.Config.Schema do
 
     workspace = %{
       settings.workspace
-      | root: resolve_path_value(settings.workspace.root, Path.join(System.tmp_dir!(), "symphony_workspaces"))
+      | root: resolve_path_value(settings.workspace.root, Path.join(System.tmp_dir!(), "symphony_workspaces")),
+        source_repo: resolve_source_repo(settings.workspace.source_repo)
     }
 
     codex = %{
@@ -538,6 +540,56 @@ defmodule SymphonyElixir.Config.Schema do
 
       path ->
         path
+    end
+  end
+
+  defp resolve_source_repo(nil), do: detect_source_repo()
+
+  defp resolve_source_repo(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> detect_source_repo()
+      path -> Path.expand(path)
+    end
+  end
+
+  defp resolve_source_repo(_), do: nil
+
+  defp detect_source_repo do
+    case Process.get(:symphony_source_repo) do
+      cached when is_binary(cached) ->
+        cached
+
+      _ ->
+        detected =
+          try do
+            workflow_dir =
+              case SymphonyElixir.Workflow.workflow_file_path() do
+                path when is_binary(path) -> Path.dirname(path)
+                _ -> File.cwd!()
+              end
+
+            case System.cmd("git", ["rev-parse", "--show-toplevel"],
+                   cd: workflow_dir,
+                   stderr_to_stdout: true
+                 ) do
+              {output, 0} ->
+                repo = String.trim(output)
+
+                if repo != "" and File.dir?(repo) do
+                  repo
+                else
+                  nil
+                end
+
+              _ ->
+                nil
+            end
+          rescue
+            _ -> nil
+          end
+
+        if is_binary(detected), do: Process.put(:symphony_source_repo, detected)
+        detected
     end
   end
 

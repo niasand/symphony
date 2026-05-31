@@ -152,7 +152,28 @@ defmodule SymphonyElixir.Feishu.Bitable.Client do
 
   defp flatten_record_fields(record), do: record
 
-  defp flatten_value([%{"text" => text, "type" => "text"} | _]), do: text
-  defp flatten_value([%{"text" => text} | _]), do: text
+  defp flatten_value(items) when is_list(items) do
+    case items do
+      [%{"text" => _, "type" => "text"} | _] ->
+        items
+        |> Enum.map(fn
+          %{"text" => text} when is_binary(text) -> text
+          _ -> ""
+        end)
+        |> Enum.join("")
+
+      [%{"text" => _} | _] ->
+        items
+        |> Enum.map(fn
+          %{"text" => text} when is_binary(text) -> text
+          _ -> ""
+        end)
+        |> Enum.join("")
+
+      _ ->
+        items
+    end
+  end
+
   defp flatten_value(value), do: value
 end

@@ -23,12 +23,12 @@ claude:
 
 decomposition:
   enabled: true
-  complexityKeywords: ["epic", "complex", "multi-part", "refactor", "migration"]
-  descriptionLengthThreshold: 500
-  maxSubTasks: 5
-  maxSubTasksTotal: 15
-  plannerMaxTurns: 3
-  mergeMaxTurns: 3
+  complexity_keywords: ["epic", "complex", "multi-part", "refactor", "migration"]
+  description_length_threshold: 500
+  max_sub_tasks: 5
+  max_sub_tasks_total: 15
+  planner_max_turns: 3
+  merge_max_turns: 3
 
 workspace:
   root: /tmp/symphony_workspaces
