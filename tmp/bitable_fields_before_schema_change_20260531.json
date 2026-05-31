@@ -1,0 +1,249 @@
+{
+  "ok": true,
+  "identity": "bot",
+  "data": {
+    "fields": [
+      {
+        "defaultValue": null,
+        "id": "fldPENECUP",
+        "name": "Retries",
+        "style": {
+          "percentage": false,
+          "precision": 0,
+          "thousands_separator": false,
+          "type": "plain"
+        },
+        "type": "number"
+      },
+      {
+        "defaultValue": null,
+        "id": "fldhRj31kw",
+        "multiple": false,
+        "name": "Agent",
+        "options": [
+          {
+            "hue": "Turquoise",
+            "lightness": "Lighter",
+            "name": "Codex"
+          },
+          {
+            "hue": "Wathet",
+            "lightness": "Lighter",
+            "name": "Claude"
+          },
+          {
+            "hue": "Green",
+            "lightness": "Lighter",
+            "name": "Manual"
+          }
+        ],
+        "type": "select"
+      },
+      {
+        "defaultValue": null,
+        "id": "fldWnDjhbv",
+        "multiple": false,
+        "name": "Labels",
+        "options": [
+          {
+            "hue": "Green",
+            "lightness": "Lighter",
+            "name": "bug"
+          },
+          {
+            "hue": "Carmine",
+            "lightness": "Lighter",
+            "name": "feature"
+          },
+          {
+            "hue": "Gray",
+            "lightness": "Lighter",
+            "name": "refactor"
+          },
+          {
+            "hue": "Red",
+            "lightness": "Lighter",
+            "name": "epic"
+          }
+        ],
+        "type": "select"
+      },
+      {
+        "defaultValue": null,
+        "id": "fldBzjv6Ck",
+        "name": "Token Total",
+        "style": {
+          "percentage": false,
+          "precision": 0,
+          "thousands_separator": false,
+          "type": "plain"
+        },
+        "type": "number"
+      },
+      {
+        "defaultValue": null,
+        "id": "fld2BfUwzM",
+        "multiple": false,
+        "name": "Priority",
+        "options": [
+          {
+            "hue": "Orange",
+            "lightness": "Lighter",
+            "name": "P0"
+          },
+          {
+            "hue": "Wathet",
+            "lightness": "Lighter",
+            "name": "P1"
+          },
+          {
+            "hue": "Yellow",
+            "lightness": "Lighter",
+            "name": "P2"
+          },
+          {
+            "hue": "Turquoise",
+            "lightness": "Lighter",
+            "name": "P3"
+          }
+        ],
+        "type": "select"
+      },
+      {
+        "defaultValue": null,
+        "id": "fldtK60APd",
+        "name": "Description",
+        "style": {
+          "type": "plain"
+        },
+        "type": "text"
+      },
+      {
+        "defaultValue": null,
+        "id": "fldvEtDpUW",
+        "name": "Token Output",
+        "style": {
+          "percentage": false,
+          "precision": 0,
+          "thousands_separator": false,
+          "type": "plain"
+        },
+        "type": "number"
+      },
+      {
+        "defaultValue": null,
+        "id": "fld6GfXYKs",
+        "name": "Parent Issue",
+        "style": {
+          "type": "plain"
+        },
+        "type": "text"
+      },
+      {
+        "defaultValue": null,
+        "id": "fldDzY7kLN",
+        "name": "Error",
+        "style": {
+          "type": "plain"
+        },
+        "type": "text"
+      },
+      {
+        "defaultValue": null,
+        "id": "fldJZ9XczA",
+        "name": "Comments",
+        "style": {
+          "type": "plain"
+        },
+        "type": "text"
+      },
+      {
+        "defaultValue": null,
+        "id": "fldqpbTPS9",
+        "name": "Token Input",
+        "style": {
+          "percentage": false,
+          "precision": 0,
+          "thousands_separator": false,
+          "type": "plain"
+        },
+        "type": "number"
+      },
+      {
+        "defaultValue": null,
+        "id": "fld05Uv464",
+        "multiple": false,
+        "name": "Status",
+        "options": [
+          {
+            "hue": "Lime",
+            "lightness": "Lighter",
+            "name": "Open"
+          },
+          {
+            "hue": "Red",
+            "lightness": "Lighter",
+            "name": "In Progress"
+          },
+          {
+            "hue": "Green",
+            "lightness": "Lighter",
+            "name": "Resolved"
+          },
+          {
+            "hue": "Orange",
+            "lightness": "Lighter",
+            "name": "Done"
+          },
+          {
+            "hue": "Carmine",
+            "lightness": "Lighter",
+            "name": "Failed"
+          },
+          {
+            "hue": "Gray",
+            "lightness": "Lighter",
+            "name": "Cancelled"
+          }
+        ],
+        "type": "select"
+      },
+      {
+        "defaultValue": null,
+        "id": "fldG7JhfHx",
+        "name": "Task",
+        "style": {
+          "type": "plain"
+        },
+        "type": "text"
+      },
+      {
+        "id": "fldtg7QIBS",
+        "name": "Completed At",
+        "style": {
+          "format": "yyyy/MM/dd"
+        },
+        "type": "datetime"
+      },
+      {
+        "defaultValue": null,
+        "id": "fldVwtiggl",
+        "name": "Branch",
+        "style": {
+          "type": "plain"
+        },
+        "type": "text"
+      },
+      {
+        "defaultValue": null,
+        "id": "fldezp1gQl",
+        "name": "Issue ID",
+        "style": {
+          "type": "plain"
+        },
+        "type": "text"
+      }
+    ],
+    "total": 16
+  }
+}
