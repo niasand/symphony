@@ -48,8 +48,8 @@ defmodule SymphonyElixir.TaskDecomposer do
             ),
           state: "Open",
           parent_id: parent_id,
-          labels: ["sub-task"],
-          priority: 2
+          labels: ["feature"],
+          priority: "P1"
         }
 
         case Tracker.create_issue(attrs) do

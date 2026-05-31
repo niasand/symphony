@@ -239,7 +239,15 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
     |> maybe_put_field(attrs, :state, "Status")
     |> maybe_put_field(attrs, :parent_id, "Parent Issue")
     |> maybe_put_field(attrs, :priority, "Priority")
+    |> maybe_put_labels(attrs)
   end
+
+  defp maybe_put_labels(fields, %{labels: [_ | _] = labels}) do
+    # Bitable select field accepts a single string value
+    Map.put(fields, "Labels", List.first(labels))
+  end
+
+  defp maybe_put_labels(fields, _attrs), do: fields
 
   defp maybe_put_field(fields, attrs, source_key, bitable_field) do
     case Map.get(attrs, source_key) do
