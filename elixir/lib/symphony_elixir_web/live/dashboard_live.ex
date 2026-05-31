@@ -433,12 +433,12 @@ defmodule SymphonyElixirWeb.DashboardLive do
 
   defp running_summary_items(entry, now) do
     [
-      {"Task", task_summary(entry)},
-      {"Current progress", current_progress_summary(entry, now)},
-      {"Blockers", blocker_summary(entry)},
-      {"Next plan", next_plan_summary(entry)},
-      {"Last activity", last_activity_summary(entry)},
-      {"Workspace", workspace_summary(entry)}
+      {"任务", task_summary(entry)},
+      {"当前进度", current_progress_summary(entry, now)},
+      {"卡点", blocker_summary(entry)},
+      {"下一步", next_plan_summary(entry)},
+      {"最近活动", last_activity_summary(entry)},
+      {"工作区", workspace_summary(entry)}
     ]
   end
 
@@ -451,7 +451,7 @@ defmodule SymphonyElixirWeb.DashboardLive do
       title && description -> "#{title}: #{truncate_summary(description)}"
       title -> title
       description -> truncate_summary(description)
-      true -> "Task title and description not reported yet."
+      true -> "暂无任务标题和描述。"
     end
   end
 
@@ -461,9 +461,9 @@ defmodule SymphonyElixirWeb.DashboardLive do
     tokens = get_in(entry, [:tokens, :total_tokens])
 
     [
-      entry.state || "unknown state",
-      "#{runtime} elapsed",
-      "#{turns} turns",
+      entry.state || "未知状态",
+      "已运行 #{runtime}",
+      "#{turns} 轮对话",
       "#{format_int(tokens)} tokens"
     ]
     |> Enum.join(" · ")
@@ -475,13 +475,13 @@ defmodule SymphonyElixirWeb.DashboardLive do
 
     cond do
       String.contains?(event, "input_required") or String.contains?(message, "input required") ->
-        "Waiting for operator input before the agent can continue."
+        "等待操作者输入，agent 无法继续执行。"
 
       String.contains?(event, "approval_required") or String.contains?(message, "approval") ->
-        "Waiting for approval before the agent can continue."
+        "等待审批通过，agent 无法继续执行。"
 
       true ->
-        "No explicit blocker detected from the latest agent update."
+        "当前无明显卡点。"
     end
   end
 
@@ -491,16 +491,16 @@ defmodule SymphonyElixirWeb.DashboardLive do
 
     cond do
       String.contains?(event, "input_required") or String.contains?(message, "input required") ->
-        "Resolve the requested input, then continue the active session."
+        "请提供所需输入，之后 agent 会继续执行。"
 
       String.contains?(event, "approval_required") or String.contains?(message, "approval") ->
-        "Review the approval request, then let the session proceed."
+        "请审批请求，通过后 agent 会继续执行。"
 
       is_nil(entry.last_message) and is_nil(entry.last_event) ->
-        "Wait for the agent's first progress event."
+        "等待 agent 首次进度事件。"
 
       true ->
-        "Continue monitoring; the next dashboard refresh will show the next Codex update."
+        "继续监控，下一次刷新将显示最新 Codex 更新。"
     end
   end
 
@@ -514,8 +514,8 @@ defmodule SymphonyElixirWeb.DashboardLive do
   end
 
   defp workspace_summary(entry) do
-    host = entry.worker_host || "local"
-    path = entry.workspace_path || "not reported yet"
+    host = entry.worker_host || "本地"
+    path = entry.workspace_path || "未上报"
 
     "#{host} · #{path}"
   end
