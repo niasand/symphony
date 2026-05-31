@@ -201,13 +201,11 @@ defmodule SymphonyElixir.Orchestrator do
     if input_required_blocker?(running_entry) do
       block_input_required_agent_down(state, issue_id, running_entry, session_id, :normal)
     else
-      Logger.info("Agent task completed for issue_id=#{issue_id} session_id=#{session_id}; scheduling active-state continuation check")
+      IO.puts("\n[SYMPHONY-DEBUG] Agent task completed for issue_id=#{issue_id} session_id=#{session_id}")
 
       # Record token totals and notify tracker of completion
-      case update_tracker_completion(issue_id, running_entry) do
-        :ok -> :ok
-        {:error, reason} -> Logger.warning("Failed to update tracker completion for issue_id=#{issue_id}: #{inspect(reason)}")
-      end
+      result = update_tracker_completion(issue_id, running_entry)
+      IO.puts("[SYMPHONY-DEBUG] update_tracker_completion result=#{inspect(result)} issue_id=#{issue_id}")
 
       state
       |> complete_issue(issue_id)
@@ -221,6 +219,7 @@ defmodule SymphonyElixir.Orchestrator do
   end
 
   defp handle_agent_down(reason, state, issue_id, running_entry, session_id) do
+    IO.puts("\n[SYMPHONY-DEBUG] Agent down with reason=#{inspect(reason)} issue_id=#{issue_id}")
     if input_required_blocker?(running_entry) do
       block_input_required_agent_down(state, issue_id, running_entry, session_id, reason)
     else
