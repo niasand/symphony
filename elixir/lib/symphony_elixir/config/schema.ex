@@ -323,6 +323,49 @@ defmodule SymphonyElixir.Config.Schema do
     end
   end
 
+  defmodule Decomposition do
+    @moduledoc false
+    use Ecto.Schema
+    import Ecto.Changeset
+
+    @primary_key false
+
+    @default_complexity_keywords ~w(epic complex multi-part refactor migration)
+
+    embedded_schema do
+      field(:enabled, :boolean, default: false)
+      field(:complexity_keywords, {:array, :string}, default: @default_complexity_keywords)
+      field(:description_length_threshold, :integer, default: 2000)
+      field(:max_sub_tasks, :integer, default: 5)
+      field(:max_sub_tasks_total, :integer, default: 15)
+      field(:planner_max_turns, :integer, default: 3)
+      field(:merge_max_turns, :integer, default: 3)
+    end
+
+    @spec changeset(%__MODULE__{}, map()) :: Ecto.Changeset.t()
+    def changeset(schema, attrs) do
+      schema
+      |> cast(
+        attrs,
+        [
+          :enabled,
+          :complexity_keywords,
+          :description_length_threshold,
+          :max_sub_tasks,
+          :max_sub_tasks_total,
+          :planner_max_turns,
+          :merge_max_turns
+        ],
+        empty_values: []
+      )
+      |> validate_number(:description_length_threshold, greater_than: 0)
+      |> validate_number(:max_sub_tasks, greater_than: 0)
+      |> validate_number(:max_sub_tasks_total, greater_than: 0)
+      |> validate_number(:planner_max_turns, greater_than: 0)
+      |> validate_number(:merge_max_turns, greater_than: 0)
+    end
+  end
+
   embedded_schema do
     embeds_one(:tracker, Tracker, on_replace: :update, defaults_to_struct: true)
     embeds_one(:polling, Polling, on_replace: :update, defaults_to_struct: true)
@@ -335,6 +378,7 @@ defmodule SymphonyElixir.Config.Schema do
     embeds_one(:observability, Observability, on_replace: :update, defaults_to_struct: true)
     embeds_one(:server, Server, on_replace: :update, defaults_to_struct: true)
     embeds_one(:notifications, Notifications, on_replace: :update, defaults_to_struct: true)
+    embeds_one(:decomposition, Decomposition, on_replace: :update, defaults_to_struct: true)
   end
 
   @spec parse(map()) :: {:ok, %__MODULE__{}} | {:error, {:invalid_workflow_config, String.t()}}
