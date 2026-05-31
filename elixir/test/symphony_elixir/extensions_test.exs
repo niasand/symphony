@@ -578,12 +578,34 @@ defmodule SymphonyElixir.ExtensionsTest do
     assert html =~ "Offline"
     assert html =~ "Copy ID"
     assert html =~ "Codex update"
+    assert html =~ "Details"
+    refute html =~ "Current progress"
     refute html =~ "data-runtime-clock="
     refute html =~ "setInterval(refreshRuntimeClocks"
     refute html =~ "Refresh now"
     refute html =~ "Transport"
     assert html =~ "status-badge-live"
     assert html =~ "status-badge-offline"
+
+    expanded_html =
+      view
+      |> element("#running-detail-toggle-issue-http")
+      |> render_click()
+
+    assert expanded_html =~ "Current progress"
+    assert expanded_html =~ "Blockers"
+    assert expanded_html =~ "Next plan"
+    assert expanded_html =~ "Last activity"
+    assert expanded_html =~ "Workspace"
+    assert expanded_html =~ "No explicit blocker detected"
+    assert expanded_html =~ "Continue monitoring"
+
+    collapsed_html =
+      view
+      |> element("#running-detail-toggle-issue-http")
+      |> render_click()
+
+    refute collapsed_html =~ "Current progress"
 
     updated_snapshot =
       put_in(snapshot.running, [

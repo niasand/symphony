@@ -109,6 +109,12 @@ button.secondary:hover {
   color: var(--ink);
 }
 
+.details-button[aria-expanded="true"] {
+  background: var(--accent-soft);
+  border-color: rgba(16, 163, 127, 0.28);
+  color: var(--accent-ink);
+}
+
 pre {
   margin: 0;
   white-space: pre-wrap;
@@ -326,6 +332,43 @@ pre,
   font-size: 0.94rem;
 }
 
+.running-detail-row td {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.running-detail-panel {
+  padding: 0.95rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fbfbfc;
+}
+
+.running-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem 1rem;
+}
+
+.summary-item {
+  min-width: 0;
+}
+
+.summary-label {
+  display: block;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.summary-value {
+  margin: 0.2rem 0 0;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
 .issue-stack,
 .session-stack,
 .detail-stack,
@@ -446,6 +489,10 @@ pre,
 
   .metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .running-summary-grid {
+    grid-template-columns: 1fr;
   }
 }
 

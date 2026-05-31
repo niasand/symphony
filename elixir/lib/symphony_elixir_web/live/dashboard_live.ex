@@ -14,6 +14,7 @@ defmodule SymphonyElixirWeb.DashboardLive do
       socket
       |> assign(:payload, load_payload())
       |> assign(:now, DateTime.utc_now())
+      |> assign(:expanded_running_details, MapSet.new())
 
     if connected?(socket) do
       :ok = ObservabilityPubSub.subscribe()
@@ -31,10 +32,28 @@ defmodule SymphonyElixirWeb.DashboardLive do
 
   @impl true
   def handle_info(:observability_updated, socket) do
+    payload = load_payload()
+
     {:noreply,
      socket
-     |> assign(:payload, load_payload())
+     |> assign(:payload, payload)
+     |> assign(
+       :expanded_running_details,
+       prune_expanded_running_details(socket.assigns.expanded_running_details, Map.get(payload, :running, []))
+     )
      |> assign(:now, DateTime.utc_now())}
+  end
+
+  @impl true
+  def handle_event("toggle_running_detail", %{"key" => key}, socket) do
+    expanded_running_details =
+      if MapSet.member?(socket.assigns.expanded_running_details, key) do
+        MapSet.delete(socket.assigns.expanded_running_details, key)
+      else
+        MapSet.put(socket.assigns.expanded_running_details, key)
+      end
+
+    {:noreply, assign(socket, :expanded_running_details, expanded_running_details)}
   end
 
   @impl true
@@ -143,6 +162,7 @@ defmodule SymphonyElixirWeb.DashboardLive do
                   <col style="width: 8.5rem;" />
                   <col />
                   <col style="width: 10rem;" />
+                  <col style="width: 8rem;" />
                 </colgroup>
                 <thead>
                   <tr>
@@ -152,10 +172,12 @@ defmodule SymphonyElixirWeb.DashboardLive do
                     <th>Runtime / turns</th>
                     <th>Codex update</th>
                     <th>Tokens</th>
+                    <th>Details</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr :for={entry <- @payload.running}>
+                  <%= for entry <- @payload.running do %>
+                  <tr>
                     <td>
                       <div class="issue-stack">
                         <span class="issue-id"><%= entry.issue_identifier %></span>
@@ -205,7 +227,37 @@ defmodule SymphonyElixirWeb.DashboardLive do
                         <span class="muted">In <%= format_int(entry.tokens.input_tokens) %> / Out <%= format_int(entry.tokens.output_tokens) %></span>
                       </div>
                     </td>
+                    <td>
+                      <button
+                        id={"running-detail-toggle-#{running_entry_key(entry)}"}
+                        type="button"
+                        class="subtle-button details-button"
+                        phx-click="toggle_running_detail"
+                        phx-value-key={running_entry_key(entry)}
+                        aria-expanded={running_detail_expanded?(@expanded_running_details, entry)}
+                        aria-controls={"running-detail-#{running_entry_key(entry)}"}
+                      >
+                        Details
+                      </button>
+                    </td>
                   </tr>
+                  <tr
+                    :if={running_detail_expanded?(@expanded_running_details, entry)}
+                    id={"running-detail-#{running_entry_key(entry)}"}
+                    class="running-detail-row"
+                  >
+                    <td colspan="7">
+                      <div class="running-detail-panel">
+                        <div class="running-summary-grid">
+                          <div :for={{label, value} <- running_summary_items(entry, @now)} class="summary-item">
+                            <span class="summary-label"><%= label %></span>
+                            <p class="summary-value"><%= value %></p>
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                  <% end %>
                 </tbody>
               </table>
             </div>
@@ -378,6 +430,98 @@ defmodule SymphonyElixirWeb.DashboardLive do
   end
 
   defp runtime_seconds_from_started_at(_started_at, _now), do: 0
+
+  defp running_summary_items(entry, now) do
+    [
+      {"Current progress", current_progress_summary(entry, now)},
+      {"Blockers", blocker_summary(entry)},
+      {"Next plan", next_plan_summary(entry)},
+      {"Last activity", last_activity_summary(entry)},
+      {"Workspace", workspace_summary(entry)}
+    ]
+  end
+
+  defp current_progress_summary(entry, now) do
+    runtime = format_runtime_seconds(runtime_seconds_from_started_at(entry.started_at, now))
+    turns = entry.turn_count || 0
+    tokens = get_in(entry, [:tokens, :total_tokens])
+
+    [
+      entry.state || "unknown state",
+      "#{runtime} elapsed",
+      "#{turns} turns",
+      "#{format_int(tokens)} tokens"
+    ]
+    |> Enum.join(" · ")
+  end
+
+  defp blocker_summary(entry) do
+    event = entry.last_event |> to_string() |> String.downcase()
+    message = entry.last_message |> to_string() |> String.downcase()
+
+    cond do
+      String.contains?(event, "input_required") or String.contains?(message, "input required") ->
+        "Waiting for operator input before the agent can continue."
+
+      String.contains?(event, "approval_required") or String.contains?(message, "approval") ->
+        "Waiting for approval before the agent can continue."
+
+      true ->
+        "No explicit blocker detected from the latest agent update."
+    end
+  end
+
+  defp next_plan_summary(entry) do
+    event = entry.last_event |> to_string() |> String.downcase()
+    message = entry.last_message |> to_string() |> String.downcase()
+
+    cond do
+      String.contains?(event, "input_required") or String.contains?(message, "input required") ->
+        "Resolve the requested input, then continue the active session."
+
+      String.contains?(event, "approval_required") or String.contains?(message, "approval") ->
+        "Review the approval request, then let the session proceed."
+
+      is_nil(entry.last_message) and is_nil(entry.last_event) ->
+        "Wait for the agent's first progress event."
+
+      true ->
+        "Continue monitoring; the next dashboard refresh will show the next Codex update."
+    end
+  end
+
+  defp last_activity_summary(entry) do
+    activity = entry.last_message || to_string(entry.last_event || "n/a")
+
+    case entry.last_event_at do
+      nil -> activity
+      last_event_at -> "#{activity} · #{last_event_at}"
+    end
+  end
+
+  defp workspace_summary(entry) do
+    host = entry.worker_host || "local"
+    path = entry.workspace_path || "not reported yet"
+
+    "#{host} · #{path}"
+  end
+
+  defp running_detail_expanded?(expanded_running_details, entry) do
+    MapSet.member?(expanded_running_details, running_entry_key(entry))
+  end
+
+  defp running_entry_key(entry) do
+    to_string(entry.issue_id || entry.issue_identifier || entry.session_id || "unknown")
+  end
+
+  defp prune_expanded_running_details(expanded_running_details, running_entries) do
+    running_keys =
+      running_entries
+      |> Enum.map(&running_entry_key/1)
+      |> MapSet.new()
+
+    MapSet.intersection(expanded_running_details, running_keys)
+  end
 
   defp format_int(value) when is_integer(value) do
     value
