@@ -204,7 +204,10 @@ defmodule SymphonyElixir.Orchestrator do
       Logger.info("Agent task completed for issue_id=#{issue_id} session_id=#{session_id}; scheduling active-state continuation check")
 
       # Record token totals and notify tracker of completion
-      update_tracker_completion(issue_id, running_entry)
+      case update_tracker_completion(issue_id, running_entry) do
+        :ok -> :ok
+        {:error, reason} -> Logger.warning("Failed to update tracker completion for issue_id=#{issue_id}: #{inspect(reason)}")
+      end
 
       state
       |> complete_issue(issue_id)

@@ -112,7 +112,7 @@ defmodule SymphonyElixir.Claude.CLI do
   defp build_args(prompt, session) do
     claude = Config.settings!().claude
 
-    ["-p", prompt, "--output-format", "stream-json"]
+    ["-p", prompt, "--output-format", "stream-json", "--verbose"]
     |> maybe_add_resume(session.conversation_id)
     |> maybe_add_flag(claude.skip_permissions, "--dangerously-skip-permissions")
     |> maybe_add_option("--model", claude.model)
