@@ -10,58 +10,81 @@ defmodule SymphonyElixir.Feishu.Bitable.Client do
 
   @base_url "https://open.feishu.cn/open-apis/bitable/v1/apps"
 
+  @type response_data :: map() | [map()]
+
   @spec list_records(String.t(), String.t(), keyword()) ::
           {:ok, [map()]} | {:error, term()}
   def list_records(app_token, table_id, opts \\ []) do
     filter = Keyword.get(opts, :filter)
     page_size = Keyword.get(opts, :page_size, 100)
 
-    with {:ok, token} <- Auth.tenant_access_token() do
-      if filter do
-        request(
-          :post,
-          "#{@base_url}/#{app_token}/tables/#{table_id}/records/search",
-          token,
-          json: %{"page_size" => page_size, "filter" => filter}
-        )
-      else
-        request(
-          :get,
-          "#{@base_url}/#{app_token}/tables/#{table_id}/records",
-          token,
-          params: [page_size: page_size]
-        )
-      end
+    with {:ok, token} <- Auth.tenant_access_token(),
+         {:ok, records} <- list_records_request(app_token, table_id, token, filter, page_size) do
+      expect_list(records)
     end
   end
 
   @spec get_record(String.t(), String.t(), String.t()) ::
           {:ok, map()} | {:error, term()}
   def get_record(app_token, table_id, record_id) do
-    with {:ok, token} <- Auth.tenant_access_token() do
-      request(:get, "#{@base_url}/#{app_token}/tables/#{table_id}/records/#{record_id}", token)
+    with {:ok, token} <- Auth.tenant_access_token(),
+         {:ok, record} <- request(:get, "#{@base_url}/#{app_token}/tables/#{table_id}/records/#{record_id}", token) do
+      expect_map(record)
     end
   end
 
   @spec update_record(String.t(), String.t(), String.t(), map()) ::
           {:ok, map()} | {:error, term()}
   def update_record(app_token, table_id, record_id, fields) do
-    with {:ok, token} <- Auth.tenant_access_token() do
+    with {:ok, token} <- Auth.tenant_access_token(),
+         {:ok, record} <-
+           request(
+             :put,
+             "#{@base_url}/#{app_token}/tables/#{table_id}/records/#{record_id}",
+             token,
+             json: %{"fields" => fields}
+           ) do
+      expect_map(record)
+    end
+  end
+
+  defp list_records_request(app_token, table_id, token, filter, page_size) do
+    if filter do
       request(
-        :put,
-        "#{@base_url}/#{app_token}/tables/#{table_id}/records/#{record_id}",
+        :post,
+        "#{@base_url}/#{app_token}/tables/#{table_id}/records/search",
         token,
-        json: %{"fields" => fields}
+        json: %{"page_size" => page_size, "filter" => filter}
+      )
+    else
+      request(
+        :get,
+        "#{@base_url}/#{app_token}/tables/#{table_id}/records",
+        token,
+        params: [page_size: page_size]
       )
     end
   end
 
-  defp request(method, url, token, opts \\ []) do
-    headers = [{"Authorization", "Bearer #{token}"}, {"Content-Type", "application/json"}]
-    opts = Keyword.merge([connect_options: [timeout: 30_000], headers: headers], opts)
-    opts = Keyword.put(opts, :method, method)
+  defp expect_list(records) when is_list(records), do: {:ok, records}
+  defp expect_list(_records), do: {:error, :unexpected_bitable_response}
 
-    case Req.request(url, opts) do
+  defp expect_map(record) when is_map(record), do: {:ok, record}
+  defp expect_map(_record), do: {:error, :unexpected_bitable_response}
+
+  @spec request(atom(), String.t(), String.t(), keyword()) ::
+          {:ok, response_data()} | {:error, term()}
+  defp request(method, url, token, opts \\ []) do
+    headers = [{"authorization", "Bearer #{token}"}, {"content-type", "application/json"}]
+
+    opts =
+      opts
+      |> Keyword.put(:connect_options, timeout: 30_000)
+      |> Keyword.put(:headers, headers)
+      |> Keyword.put(:method, method)
+      |> Keyword.put(:url, url)
+
+    case Req.request(opts) do
       {:ok, %Req.Response{status: 200, body: body}} ->
         case body do
           %{"code" => 0, "data" => data} ->

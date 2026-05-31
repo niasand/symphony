@@ -36,8 +36,7 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
       _ ->
         filter = %{"conjunction" => "or", "conditions" => conditions}
 
-        with {:ok, data} <- Client.list_records(bitable_app_token(), bitable_table_id(), filter: filter) do
-          records = parse_records(data)
+        with {:ok, records} <- Client.list_records(bitable_app_token(), bitable_table_id(), filter: filter) do
           {:ok, Enum.map(records, &Issue.from_record/1)}
         end
     end
@@ -52,7 +51,7 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
   def create_comment(record_id, body) when is_binary(record_id) and is_binary(body) do
     with {:ok, current} <- Client.get_record(bitable_app_token(), bitable_table_id(), record_id) do
       existing = extract_text_field(current, "Comments")
-      separator = if existing && existing != "", do: "\n\n---\n\n", else: ""
+      separator = if existing != "", do: "\n\n---\n\n", else: ""
       new_comment = "#{separator}[#{format_timestamp()}] #{body}"
 
       case Client.update_record(
@@ -114,12 +113,9 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
   # --- Private helpers ---
 
   defp fetch_issue_state_by_id(record_id) do
-    with {:ok, data} <- Client.get_record(bitable_app_token(), bitable_table_id(), record_id),
-         record when not is_nil(record) <- extract_record(data) do
-      [Issue.from_record(record)]
-    else
-      nil ->
-        []
+    case Client.get_record(bitable_app_token(), bitable_table_id(), record_id) do
+      {:ok, record} ->
+        [Issue.from_record(record)]
 
       {:error, reason} ->
         Logger.debug("Bitable record #{record_id} not found: #{inspect(reason)}")
@@ -183,14 +179,6 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
   defp agent_label do
     config_module().settings!().agent.kind |> String.capitalize()
   end
-
-  defp parse_records(records) when is_list(records), do: records
-  defp parse_records(%{"items" => items}) when is_list(items), do: items
-  defp parse_records(_), do: []
-
-  defp extract_record(%{"record" => record}) when is_map(record), do: record
-  defp extract_record(record) when is_map(record), do: record
-  defp extract_record(_), do: nil
 
   defp extract_text_field(data, field_name) do
     case data do
