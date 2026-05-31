@@ -8,6 +8,7 @@ defmodule SymphonyElixir.Orchestrator do
   import Bitwise, only: [<<<: 2]
 
   alias SymphonyElixir.{AgentRunner, ComplexityClassifier, Config, Git, PlannerPrompt, StatusDashboard, TaskDecomposer, Tracker, Workspace}
+  alias SymphonyElixir.Codex.EventDetails
   alias SymphonyElixir.Feishu.Bitable.Adapter, as: BitableAdapter
   alias SymphonyElixir.Feishu.Webhook
   alias SymphonyElixir.Tracker.Issue
@@ -998,7 +999,8 @@ defmodule SymphonyElixir.Orchestrator do
       blocked_at: DateTime.utc_now(),
       last_codex_message: Map.get(running_entry, :last_codex_message),
       last_codex_event: Map.get(running_entry, :last_codex_event),
-      last_codex_timestamp: Map.get(running_entry, :last_codex_timestamp)
+      last_codex_timestamp: Map.get(running_entry, :last_codex_timestamp),
+      task_details: Map.get(running_entry, :task_details, %{})
     }
 
     %{
@@ -1266,6 +1268,7 @@ defmodule SymphonyElixir.Orchestrator do
                 last_codex_message: nil,
                 last_codex_timestamp: nil,
                 last_codex_event: nil,
+                task_details: %{},
                 codex_app_server_pid: nil,
                 codex_input_tokens: 0,
                 codex_output_tokens: 0,
@@ -1340,6 +1343,7 @@ defmodule SymphonyElixir.Orchestrator do
                 last_codex_message: nil,
                 last_codex_timestamp: nil,
                 last_codex_event: nil,
+                task_details: %{},
                 codex_app_server_pid: nil,
                 codex_input_tokens: 0,
                 codex_output_tokens: 0,
@@ -1414,6 +1418,7 @@ defmodule SymphonyElixir.Orchestrator do
             last_codex_message: nil,
             last_codex_timestamp: nil,
             last_codex_event: nil,
+            task_details: %{},
             codex_app_server_pid: nil,
             codex_input_tokens: 0,
             codex_output_tokens: 0,
@@ -1869,6 +1874,7 @@ defmodule SymphonyElixir.Orchestrator do
           last_codex_timestamp: metadata.last_codex_timestamp,
           last_codex_message: metadata.last_codex_message,
           last_codex_event: metadata.last_codex_event,
+          task_details: Map.get(metadata, :task_details, %{}),
           runtime_seconds: running_seconds(metadata.started_at, now)
         }
       end)
@@ -1901,7 +1907,8 @@ defmodule SymphonyElixir.Orchestrator do
           blocked_at: Map.get(metadata, :blocked_at),
           last_codex_timestamp: Map.get(metadata, :last_codex_timestamp),
           last_codex_message: Map.get(metadata, :last_codex_message),
-          last_codex_event: Map.get(metadata, :last_codex_event)
+          last_codex_event: Map.get(metadata, :last_codex_event),
+          task_details: Map.get(metadata, :task_details, %{})
         }
       end)
 
@@ -1962,6 +1969,7 @@ defmodule SymphonyElixir.Orchestrator do
     last_reported_output = Map.get(running_entry, :codex_last_reported_output_tokens, 0)
     last_reported_total = Map.get(running_entry, :codex_last_reported_total_tokens, 0)
     turn_count = Map.get(running_entry, :turn_count, 0)
+    task_details = EventDetails.merge(Map.get(running_entry, :task_details, %{}), update)
 
     {
       Map.merge(running_entry, %{
@@ -1969,6 +1977,7 @@ defmodule SymphonyElixir.Orchestrator do
         last_codex_message: summarize_codex_update(update),
         session_id: session_id_for_update(running_entry.session_id, update),
         last_codex_event: event,
+        task_details: task_details,
         codex_app_server_pid: codex_app_server_pid_for_update(codex_app_server_pid, update),
         codex_input_tokens: codex_input_tokens + token_delta.input_tokens,
         codex_output_tokens: codex_output_tokens + token_delta.output_tokens,

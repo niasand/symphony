@@ -114,6 +114,7 @@ defmodule SymphonyElixirWeb.Presenter do
       turn_count: Map.get(entry, :turn_count, 0),
       last_event: entry.last_codex_event,
       last_message: summarize_message(entry.last_codex_message),
+      task_details: task_details_payload(Map.get(entry, :task_details)),
       started_at: iso8601(entry.started_at),
       last_event_at: iso8601(entry.last_codex_timestamp),
       tokens: %{
@@ -148,6 +149,7 @@ defmodule SymphonyElixirWeb.Presenter do
       blocked_at: iso8601(entry.blocked_at),
       last_event: entry.last_codex_event,
       last_message: summarize_message(entry.last_codex_message),
+      task_details: task_details_payload(Map.get(entry, :task_details)),
       last_event_at: iso8601(entry.last_codex_timestamp)
     }
   end
@@ -174,6 +176,7 @@ defmodule SymphonyElixirWeb.Presenter do
       started_at: iso8601(running.started_at),
       last_event: running.last_codex_event,
       last_message: summarize_message(running.last_codex_message),
+      task_details: task_details_payload(Map.get(running, :task_details)),
       last_event_at: iso8601(running.last_codex_timestamp),
       tokens: %{
         input_tokens: running.codex_input_tokens,
@@ -203,9 +206,20 @@ defmodule SymphonyElixirWeb.Presenter do
       blocked_at: iso8601(blocked.blocked_at),
       last_event: blocked.last_codex_event,
       last_message: summarize_message(blocked.last_codex_message),
+      task_details: task_details_payload(Map.get(blocked, :task_details)),
       last_event_at: iso8601(blocked.last_codex_timestamp)
     }
   end
+
+  defp task_details_payload(details) when is_map(details) do
+    %{
+      progress: blank_to_nil(Map.get(details, :progress) || Map.get(details, "progress")),
+      blocker: blank_to_nil(Map.get(details, :blocker) || Map.get(details, "blocker")),
+      plan: blank_to_nil(Map.get(details, :plan) || Map.get(details, "plan"))
+    }
+  end
+
+  defp task_details_payload(_details), do: %{progress: nil, blocker: nil, plan: nil}
 
   defp entry_issue_payload(entry) do
     issue = Map.get(entry, :issue)
@@ -218,6 +232,13 @@ defmodule SymphonyElixirWeb.Presenter do
 
   defp issue_field(issue, field) when is_map(issue), do: Map.get(issue, field)
   defp issue_field(_issue, _field), do: nil
+
+  defp blank_to_nil(value) when is_binary(value) do
+    value = String.trim(value)
+    if value == "", do: nil, else: value
+  end
+
+  defp blank_to_nil(_value), do: nil
 
   defp workspace_path(issue_identifier, running, retry, blocked) do
     (running && Map.get(running, :workspace_path)) ||
