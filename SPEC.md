@@ -1286,6 +1286,7 @@ SHOULD return:
 
 - `running` (list of running session rows)
 - each running row SHOULD include `turn_count`
+- each running row MAY include `task_details` derived from agent progress, blocker, and plan events
 - `retrying` (list of retry queue rows)
 - `codex_totals`
   - `input_tokens`
@@ -1411,6 +1412,11 @@ Minimum endpoints:
           "turn_count": 7,
           "last_event": "turn_completed",
           "last_message": "",
+          "task_details": {
+            "progress": "Running targeted tests",
+            "blocker": null,
+            "plan": "in_progress: Validate event details"
+          },
           "started_at": "2026-02-24T20:10:12Z",
           "last_event_at": "2026-02-24T20:14:59Z",
           "tokens": {
@@ -1463,6 +1469,11 @@ Minimum endpoints:
         "started_at": "2026-02-24T20:10:12Z",
         "last_event": "notification",
         "last_message": "Working on tests",
+        "task_details": {
+          "progress": "Working on tests",
+          "blocker": null,
+          "plan": "in_progress: Run checks"
+        },
         "last_event_at": "2026-02-24T20:14:59Z",
         "tokens": {
           "input_tokens": 1200,

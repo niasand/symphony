@@ -101,6 +101,142 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
            }
   end
 
+  test "orchestrator snapshot tracks task detail fields from codex event streams" do
+    issue_id = "issue-task-detail-events"
+
+    issue = %Issue{
+      id: issue_id,
+      identifier: "MT-189",
+      title: "Task details",
+      description: "Capture progress blocker plan events",
+      state: "In Progress",
+      url: "https://example.org/issues/MT-189"
+    }
+
+    orchestrator_name = Module.concat(__MODULE__, :TaskDetailEventOrchestrator)
+    {:ok, pid} = Orchestrator.start_link(name: orchestrator_name)
+
+    on_exit(fn ->
+      if Process.alive?(pid) do
+        Process.exit(pid, :normal)
+      end
+    end)
+
+    initial_state = :sys.get_state(pid)
+    started_at = DateTime.utc_now()
+
+    running_entry = %{
+      pid: self(),
+      ref: make_ref(),
+      identifier: issue.identifier,
+      issue: issue,
+      session_id: "thread-detail",
+      turn_count: 1,
+      last_codex_message: nil,
+      last_codex_timestamp: nil,
+      last_codex_event: nil,
+      task_details: %{},
+      codex_app_server_pid: nil,
+      codex_input_tokens: 0,
+      codex_output_tokens: 0,
+      codex_total_tokens: 0,
+      codex_last_reported_input_tokens: 0,
+      codex_last_reported_output_tokens: 0,
+      codex_last_reported_total_tokens: 0,
+      started_at: started_at
+    }
+
+    :sys.replace_state(pid, fn _ ->
+      initial_state
+      |> Map.put(:running, %{issue_id => running_entry})
+      |> Map.put(:claimed, MapSet.put(initial_state.claimed, issue_id))
+    end)
+
+    send(
+      pid,
+      {:codex_worker_update, issue_id,
+       %{
+         event: :notification,
+         payload: %{
+           "method" => "codex/event/agent_message_delta",
+           "params" => %{"msg" => %{"payload" => %{"delta" => "writing implementation"}}}
+         },
+         timestamp: DateTime.utc_now()
+       }}
+    )
+
+    send(
+      pid,
+      {:codex_worker_update, issue_id,
+       %{
+         event: :notification,
+         payload: %{
+           "method" => "turn/plan/updated",
+           "params" => %{
+             "plan" => [
+               %{"step" => "Inspect event stream", "status" => "completed"},
+               %{"step" => "Wire task detail fields", "status" => "in_progress"}
+             ]
+           }
+         },
+         timestamp: DateTime.utc_now()
+       }}
+    )
+
+    send(
+      pid,
+      {:codex_worker_update, issue_id,
+       %{
+         event: :notification,
+         payload: %{
+           "method" => "item/tool/requestUserInput",
+           "params" => %{
+             "questions" => [
+               %{"question" => "What should I do next?"}
+             ]
+           }
+         },
+         timestamp: DateTime.utc_now()
+       }}
+    )
+
+    send(
+      pid,
+      {:codex_worker_update, issue_id,
+       %{
+         event: :notification,
+         payload: %{
+           "method" => "codex/event/token_count",
+           "params" => %{
+             "msg" => %{
+               "type" => "token_count",
+               "info" => %{
+                 "total_token_usage" => %{
+                   "input_tokens" => 10,
+                   "output_tokens" => 5,
+                   "total_tokens" => 15
+                 }
+               }
+             }
+           }
+         },
+         timestamp: DateTime.utc_now()
+       }}
+    )
+
+    snapshot = GenServer.call(pid, :snapshot)
+    assert %{running: [snapshot_entry]} = snapshot
+    assert snapshot_entry.task_details.progress == "writing implementation"
+
+    assert snapshot_entry.task_details.plan ==
+             "completed: Inspect event stream | in_progress: Wire task detail fields"
+
+    assert snapshot_entry.task_details.blocker ==
+             "operator input required: What should I do next?"
+
+    assert snapshot_entry.last_codex_message.message["method"] == "codex/event/token_count"
+  end
+
   test "orchestrator snapshot tracks codex thread totals and app-server pid" do
     issue_id = "issue-usage-snapshot"
 
