@@ -93,7 +93,6 @@ export function parseConfig(raw: RawConfig, workflowDir: string): Result<Service
   const hooks = obj(raw, 'hooks');
   const agent = obj(raw, 'agent');
   const codex = obj(raw, 'codex');
-  const claude = obj(raw, 'claude');
   const worker = obj(raw, 'worker');
   const server = obj(raw, 'server');
 
@@ -121,7 +120,7 @@ export function parseConfig(raw: RawConfig, workflowDir: string): Result<Service
 
   const errors: string[] = [];
 
-  if (agentKind === undefined) errors.push('agent.kind must be "codex" or "claude"');
+  if (agentKind === undefined) errors.push('agent.kind must be "codex"');
   if (intervalMs <= 0) errors.push('polling.intervalMs must be > 0');
   if (maxConcurrentAgents <= 0) errors.push('agent.maxConcurrentAgents must be > 0');
   if (maxTurns <= 0) errors.push('agent.maxTurns must be > 0');
@@ -172,15 +171,6 @@ export function parseConfig(raw: RawConfig, workflowDir: string): Result<Service
       readTimeoutMs,
       stallTimeoutMs,
     },
-    claude: {
-      command: str(claude, 'command', 'claude'),
-      model: nullableStr(claude, 'model'),
-      maxTurnsPerInvocation: nullableNum(claude, 'maxTurnsPerInvocation'),
-      skipPermissions: bool(claude, 'skipPermissions', false),
-      systemPrompt: nullableStr(claude, 'systemPrompt'),
-      turnTimeoutMs: num(claude, 'turnTimeoutMs', 3600000),
-      stallTimeoutMs: num(claude, 'stallTimeoutMs', 300000),
-    },
     worker: {
       sshHosts: strArr(worker, 'sshHosts', []),
       maxConcurrentAgentsPerHost: nullableNum(worker, 'maxConcurrentAgentsPerHost'),
@@ -206,7 +196,6 @@ function normalizeStateLimits(raw: unknown): Record<string, number> {
 
 function parseAgentKind(raw: string): AgentConfig['kind'] | undefined {
   const normalized = raw.trim().toLowerCase();
-  if (normalized === 'claude') return 'claude';
   if (normalized === 'codex') return 'codex';
   return undefined;
 }
@@ -229,14 +218,8 @@ export function validateDispatchConfig(config: ServiceConfig): Result<void> {
   }
 
   // Validate agent-specific command config
-  if (config.agent.kind === 'claude') {
-    if (!config.claude.command || config.claude.command.trim() === '') {
-      errors.push('claude.command must be non-empty');
-    }
-  } else {
-    if (!config.codex.command || config.codex.command.trim() === '') {
-      errors.push('codex.command must be non-empty');
-    }
+  if (!config.codex.command || config.codex.command.trim() === '') {
+    errors.push('codex.command must be non-empty');
   }
 
   if (errors.length > 0) {

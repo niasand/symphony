@@ -648,8 +648,8 @@ export class Orchestrator extends EventEmitter<OrchestratorEventMap> {
   }
 }
 
-// ── Agent-agnostic stall timeout ──
+// ── Stall timeout ──
 
 function getStallTimeoutMs(config: ServiceConfig): number {
-  return config.agent.kind === 'claude' ? config.claude.stallTimeoutMs : config.codex.stallTimeoutMs;
+  return config.codex.stallTimeoutMs;
 }

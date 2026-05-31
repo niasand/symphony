@@ -13,7 +13,6 @@ export type {
   HooksConfig,
   AgentConfig,
   CodexConfig,
-  ClaudeConfig,
   WorkerConfig,
   ServerConfig,
   WorkspaceInfo,

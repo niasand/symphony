@@ -1,12 +1,16 @@
 // AgentAdapter — pluggable interface for coding agent backends.
-// Codex and Claude implement this contract; the runner selects via config.
+// Codex implements this contract; the runner selects via config.
+//
+// Session safety: each adapter stores its full session in a private WeakMap,
+// keyed by the lightweight AgentSession handle returned to the runner.
+// No `as unknown as` casts needed — the handle is a real AgentSession,
+// and the adapter recovers its internal session via WeakMap lookup.
 
 import type { ChildProcess } from 'node:child_process';
 import type { Result, ServiceConfig, Issue, CodexUpdateEvent } from '../types.js';
 import { CodexAdapter } from './codex-adapter.js';
-import { ClaudeAdapter } from './claude-adapter.js';
 
-// ── Shared session base ──
+// ── Shared session handle (returned to runner) ──
 
 export interface AgentSession {
   process: ChildProcess | null;
@@ -43,12 +47,6 @@ export interface AgentAdapter {
 
 // ── Factory ──
 
-export function createAdapter(kind: string): AgentAdapter {
-  switch (kind) {
-    case 'claude':
-      return new ClaudeAdapter();
-    case 'codex':
-    default:
-      return new CodexAdapter();
-  }
+export function createAdapter(_kind: string): AgentAdapter {
+  return new CodexAdapter();
 }
