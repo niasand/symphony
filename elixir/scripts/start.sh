@@ -8,4 +8,4 @@ export FEISHU_BITABLE_APP_TOKEN="Ir7pbRChgaYRYns4hmWcNfHJnKe"
 export FEISHU_BITABLE_TABLE_ID="tblHW47GcJNC0SqE"
 
 eval "$(mise activate bash)"
-mix run --no-halt 2>&1 | tee -a logs/debug.log
+mix run --no-halt

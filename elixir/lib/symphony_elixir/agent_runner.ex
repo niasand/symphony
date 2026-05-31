@@ -16,20 +16,16 @@ defmodule SymphonyElixir.AgentRunner do
     # The orchestrator owns host retries so one worker lifetime never hops machines.
     worker_host = selected_worker_host(Keyword.get(opts, :worker_host), Config.settings!().worker.ssh_hosts)
 
-    IO.puts("\n[SYM-DEBUG] AgentRunner.run START issue=#{issue.identifier} id=#{issue.id}")
-    Process.flag(:trap_exit, true)
+    Logger.info("Starting agent run for #{issue_context(issue)} worker_host=#{worker_host_for_log(worker_host)}")
 
-    result = case run_on_worker_host(issue, codex_update_recipient, opts, worker_host) do
+    case run_on_worker_host(issue, codex_update_recipient, opts, worker_host) do
       :ok ->
-        IO.puts("[SYM-DEBUG] AgentRunner.run OK issue=#{issue.identifier}")
         :ok
 
       {:error, reason} ->
-        IO.puts("[SYM-DEBUG] AgentRunner.run ERROR issue=#{issue.identifier} reason=#{inspect(reason)}")
+        Logger.error("Agent run failed for #{issue_context(issue)}: #{inspect(reason)}")
         raise RuntimeError, "Agent run failed for #{issue_context(issue)}: #{inspect(reason)}"
     end
-
-    result
   end
 
   defp run_on_worker_host(issue, codex_update_recipient, opts, worker_host) do

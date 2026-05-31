@@ -19,6 +19,7 @@ claude:
   maxTurnsPerInvocation: 10
   turnTimeoutMs: 3600000
   stallTimeoutMs: 300000
+  skip_permissions: true
 
 workspace:
   root: /tmp/symphony_workspaces
