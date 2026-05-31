@@ -203,6 +203,9 @@ defmodule SymphonyElixir.Orchestrator do
     else
       Logger.info("Agent task completed for issue_id=#{issue_id} session_id=#{session_id}; scheduling active-state continuation check")
 
+      # Record token totals and notify tracker of completion
+      update_tracker_completion(issue_id, running_entry)
+
       state
       |> complete_issue(issue_id)
       |> schedule_issue_retry(issue_id, 1, %{
@@ -232,6 +235,9 @@ defmodule SymphonyElixir.Orchestrator do
 
   defp retry_agent_down(state, issue_id, running_entry, session_id, reason) do
     Logger.warning("Agent task exited for issue_id=#{issue_id} session_id=#{session_id} reason=#{inspect(reason)}; scheduling retry")
+
+    # Notify tracker of failure with token metadata
+    update_tracker_failure(issue_id, running_entry, reason)
 
     next_attempt = next_retry_attempt_from_running(running_entry)
 
@@ -931,6 +937,9 @@ defmodule SymphonyElixir.Orchestrator do
         ref = Process.monitor(pid)
 
         Logger.info("Dispatching issue to agent: #{issue_context(issue)} pid=#{inspect(pid)} attempt=#{inspect(attempt)} worker_host=#{worker_host || "local"}")
+
+        # Notify tracker that the issue is now being processed
+        Tracker.update_issue_state(issue.id, "进行中")
 
         running =
           Map.put(state.running, issue.id, %{
@@ -1918,4 +1927,58 @@ defmodule SymphonyElixir.Orchestrator do
   end
 
   defp integer_like(_value), do: nil
+
+  # ── Tracker status update helpers ──
+
+  defp update_tracker_completion(issue_id, running_entry) when is_binary(issue_id) do
+    input_tokens = Map.get(running_entry, :codex_input_tokens, 0)
+    output_tokens = Map.get(running_entry, :codex_output_tokens, 0)
+    total_tokens = Map.get(running_entry, :codex_total_tokens, 0)
+    retry_count = Map.get(running_entry, :retry_attempt, 0)
+
+    metadata = %{
+      state: "已完成",
+      input_tokens: input_tokens,
+      output_tokens: output_tokens,
+      total_tokens: total_tokens,
+      retry_count: retry_count
+    }
+
+    case Tracker.adapter() do
+      SymphonyElixir.Feishu.Bitable.Adapter ->
+        SymphonyElixir.Feishu.Bitable.Adapter.update_record_with_metadata(issue_id, metadata)
+
+      _ ->
+        Tracker.update_issue_state(issue_id, "已完成")
+    end
+  end
+
+  defp update_tracker_completion(_issue_id, _running_entry), do: :ok
+
+  defp update_tracker_failure(issue_id, running_entry, reason) when is_binary(issue_id) do
+    input_tokens = Map.get(running_entry, :codex_input_tokens, 0)
+    output_tokens = Map.get(running_entry, :codex_output_tokens, 0)
+    total_tokens = Map.get(running_entry, :codex_total_tokens, 0)
+    retry_attempt = Map.get(running_entry, :retry_attempt, 0)
+    error_msg = "agent exited: #{inspect(reason)}"
+
+    metadata = %{
+      state: "已失败",
+      input_tokens: input_tokens,
+      output_tokens: output_tokens,
+      total_tokens: total_tokens,
+      retry_count: retry_attempt,
+      error: error_msg
+    }
+
+    case Tracker.adapter() do
+      SymphonyElixir.Feishu.Bitable.Adapter ->
+        SymphonyElixir.Feishu.Bitable.Adapter.update_record_with_metadata(issue_id, metadata)
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp update_tracker_failure(_issue_id, _running_entry, _reason), do: :ok
 end
