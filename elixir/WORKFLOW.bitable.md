@@ -22,7 +22,7 @@ claude:
   skip_permissions: true
 
 decomposition:
-  enabled: false
+  enabled: true
   complexityKeywords: ["epic", "complex", "multi-part", "refactor", "migration"]
   descriptionLengthThreshold: 2000
   maxSubTasks: 5

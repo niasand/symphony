@@ -1585,6 +1585,31 @@ defmodule SymphonyElixir.Orchestrator do
     end
   end
 
+  defp recover_orphan_in_progress do
+    case Tracker.fetch_issues_by_states(["In Progress"]) do
+      {:ok, issues} when is_list(issues) and length(issues) > 0 ->
+        Logger.warning("Found #{length(issues)} orphan In Progress issue(s) from previous orchestrator run")
+
+        Enum.each(issues, fn %Issue{id: issue_id, identifier: identifier} ->
+          Tracker.update_issue_state(issue_id, "Failed")
+
+          case BitableAdapter.create_comment(issue_id, "Orchestrator restart: agent session lost. Set back to Open to retry.") do
+            :ok -> :ok
+            {:error, reason} -> Logger.warning("Failed to comment on orphan issue #{issue_id}: #{inspect(reason)}")
+          end
+
+          cleanup_issue_workspace(identifier)
+          Logger.warning("Recovered orphan In Progress issue: #{issue_id} (#{identifier}) → Failed")
+        end)
+
+      {:ok, []} ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning("Could not check for orphan In Progress issues: #{inspect(reason)}")
+    end
+  end
+
   defp notify_dashboard do
     StatusDashboard.notify_update()
   end
