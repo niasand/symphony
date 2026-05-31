@@ -182,8 +182,8 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
     config_module().settings!().agent.kind |> String.capitalize()
   end
 
+  defp parse_records(records) when is_list(records), do: records
   defp parse_records(%{"items" => items}) when is_list(items), do: items
-  defp parse_records(%{"records" => records}) when is_list(records), do: records
   defp parse_records(_), do: []
 
   defp extract_record(%{"record" => record}) when is_map(record), do: record

@@ -44,9 +44,9 @@ defmodule SymphonyElixir.Feishu.Bitable.Issue do
 
   def from_record(_record), do: %Issue{id: nil, identifier: nil, title: nil, state: "待处理"}
 
-  # Bitable select fields return ["value"] — extract the single value
-  defp select_value([value | _]) when is_binary(value), do: value
+  # Bitable select fields may be: "value" (search API) or ["value"] (list API)
   defp select_value(value) when is_binary(value), do: value
+  defp select_value([value | _]) when is_binary(value), do: value
   defp select_value(_), do: nil
 
   defp parse_priority("P0"), do: 1

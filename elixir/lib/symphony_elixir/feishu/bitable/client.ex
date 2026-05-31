@@ -16,13 +16,22 @@ defmodule SymphonyElixir.Feishu.Bitable.Client do
     filter = Keyword.get(opts, :filter)
     page_size = Keyword.get(opts, :page_size, 100)
 
-    params = [page_size: page_size]
-    params = if filter, do: Keyword.put(params, :filter, Jason.encode!(filter)), else: params
-
     with {:ok, token} <- Auth.tenant_access_token() do
-      request(:get, "#{@base_url}/#{app_token}/tables/#{table_id}/records", token,
-        params: params
-      )
+      if filter do
+        request(
+          :post,
+          "#{@base_url}/#{app_token}/tables/#{table_id}/records/search",
+          token,
+          json: %{"page_size" => page_size, "filter" => filter}
+        )
+      else
+        request(
+          :get,
+          "#{@base_url}/#{app_token}/tables/#{table_id}/records",
+          token,
+          params: [page_size: page_size]
+        )
+      end
     end
   end
 
@@ -50,15 +59,13 @@ defmodule SymphonyElixir.Feishu.Bitable.Client do
   defp request(method, url, token, opts \\ []) do
     headers = [{"Authorization", "Bearer #{token}"}, {"Content-Type", "application/json"}]
     opts = Keyword.merge([connect_options: [timeout: 30_000], headers: headers], opts)
+    opts = Keyword.put(opts, :method, method)
 
-    req_opts = Keyword.merge([connect_options: [timeout: 30_000], headers: headers], opts)
-    req_opts = Keyword.put(req_opts, :method, method)
-
-    case Req.request(url, req_opts) do
+    case Req.request(url, opts) do
       {:ok, %Req.Response{status: 200, body: body}} ->
         case body do
           %{"code" => 0, "data" => data} ->
-            {:ok, data}
+            {:ok, normalize_records(data)}
 
           %{"code" => code, "msg" => msg} ->
             Logger.warning("Feishu Bitable API error: code=#{code} msg=#{msg}")
@@ -77,4 +84,37 @@ defmodule SymphonyElixir.Feishu.Bitable.Client do
         {:error, {:bitable_request_failed, reason}}
     end
   end
+
+  # Search API: %{"items" => [...], "total" => N, "has_more" => bool}
+  defp normalize_records(%{"items" => items}) when is_list(items) do
+    items
+    |> Enum.map(&flatten_record_fields/1)
+  end
+
+  # GET list API: %{"data" => [[...], ...], "fields" => [...], "record_id_list" => [...]}
+  defp normalize_records(%{"data" => rows, "fields" => field_names, "record_id_list" => record_ids})
+       when is_list(rows) and is_list(field_names) and is_list(record_ids) do
+    Enum.zip_with([record_ids, rows], fn [record_id, row] ->
+      fields = Enum.zip(field_names, row) |> Map.new()
+      %{"record_id" => record_id, "fields" => fields}
+    end)
+  end
+
+  # Single record (get_record / update_record)
+  defp normalize_records(%{"record" => record}) when is_map(record), do: flatten_record_fields(record)
+  defp normalize_records(%{"record_id" => _} = record), do: flatten_record_fields(record)
+
+  defp normalize_records(data), do: data
+
+  # Text fields in search API come as [{"text": "...", "type": "text"}]
+  # Flatten them to plain strings for easier consumption
+  defp flatten_record_fields(%{"record_id" => rid, "fields" => fields}) when is_map(fields) do
+    %{"record_id" => rid, "fields" => Map.new(fields, fn {k, v} -> {k, flatten_value(v)} end)}
+  end
+
+  defp flatten_record_fields(record), do: record
+
+  defp flatten_value([%{"text" => text, "type" => "text"} | _]), do: text
+  defp flatten_value([%{"text" => text} | _]), do: text
+  defp flatten_value(value), do: value
 end
