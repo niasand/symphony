@@ -1,3 +1,18 @@
+## [2026-05-31] Fix: Crash recovery for orphan "In Progress" issues
+
+**Problem**: Orchestrator crashed (port 3100 conflict at 19:25). On restart, `init/1` only cleaned terminal-state workspaces — "In Progress" issues were orphaned: no agent tracking them, no completion flow, no webhook, no MR comment. The orchestrator re-dispatched them as new, creating duplicate Claude processes.
+
+**Root cause chain**: Crash → empty `running` state → no process monitors → "In Progress" treated as new candidate → duplicate dispatch → all stuck.
+
+**Fix**:
+- Added `recover_orphan_in_progress/0` in orchestrator.ex, called from `init/1` after terminal cleanup
+- Fetches issues in "In Progress" state from tracker
+- Marks each as "Failed" with Bitable comment: "Orchestrator restart: agent session lost. Set back to Open to retry."
+- Cleans up orphan workspaces
+- Also fixed `start.sh` to pass through `FEISHU_WEBHOOK_URL` env var for completion notifications
+
+**Files changed**: `elixir/lib/symphony_elixir/orchestrator.ex`, `elixir/scripts/start.sh`
+
 ## [2026-05-31] ✅ FEATURE: Intelligent task decomposition with fan-out subagents
 
 **Status**: Implemented (decomposition.enabled: false by default)
