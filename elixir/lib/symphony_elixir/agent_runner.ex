@@ -7,7 +7,7 @@ defmodule SymphonyElixir.AgentRunner do
 
   alias SymphonyElixir.Claude.CLI, as: ClaudeCLI
   alias SymphonyElixir.Codex.AppServer
-  alias SymphonyElixir.{Config, PromptBuilder, Tracker, Workspace}
+  alias SymphonyElixir.{Config, Git, PromptBuilder, Tracker, Workspace}
   alias SymphonyElixir.Tracker.Issue
 
   @type worker_host :: String.t() | nil
@@ -35,6 +35,9 @@ defmodule SymphonyElixir.AgentRunner do
     case Workspace.create_for_issue(issue, worker_host) do
       {:ok, workspace} ->
         send_worker_runtime_info(codex_update_recipient, issue, worker_host, workspace)
+
+        # Create a feature branch for this issue
+        maybe_create_branch(workspace, issue)
 
         try do
           with :ok <- Workspace.run_before_run_hook(workspace, issue, worker_host) do
@@ -193,6 +196,19 @@ defmodule SymphonyElixir.AgentRunner do
   end
 
   defp active_issue_state?(_state_name), do: false
+
+  defp maybe_create_branch(workspace, %Issue{identifier: identifier})
+       when is_binary(identifier) and identifier != "" do
+    case Git.create_branch(workspace, identifier) do
+      {:ok, branch_name} ->
+        Logger.info("Created feature branch for #{identifier}: #{branch_name}")
+
+      {:error, reason} ->
+        Logger.warning("Could not create branch for #{identifier}: #{inspect(reason)}; agent will proceed without dedicated branch")
+    end
+  end
+
+  defp maybe_create_branch(_workspace, _issue), do: :ok
 
   defp configured_agent_module do
     case Config.settings!().agent.kind do

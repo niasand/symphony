@@ -7,8 +7,8 @@ defmodule SymphonyElixir.Orchestrator do
   require Logger
   import Bitwise, only: [<<<: 2]
 
-  alias SymphonyElixir.{AgentRunner, Config, StatusDashboard, Tracker, Workspace}
-  alias SymphonyElixir.Feishu.Bitable.Adapter, as: BitableAdapter
+  alias SymphonyElixir.{AgentRunner, Config, Git, StatusDashboard, Tracker, Workspace}
+  alias SymphonyElixir.Feishu.{Bitable.Adapter, as: BitableAdapter, Webhook}
   alias SymphonyElixir.Tracker.Issue
 
   @continuation_retry_delay_ms 1_000
@@ -202,22 +202,28 @@ defmodule SymphonyElixir.Orchestrator do
     if input_required_blocker?(running_entry) do
       block_input_required_agent_down(state, issue_id, running_entry, session_id, :normal)
     else
-      Logger.info("Agent task completed for issue_id=#{issue_id} session_id=#{session_id}; scheduling active-state continuation check")
+      Logger.info("Agent task completed for issue_id=#{issue_id} session_id=#{session_id}")
 
-      # Record token totals and notify tracker of completion.
-      # Do NOT mark as "Resolved" here — the agent may have hit max_turns.
-      # The continuation retry will check the actual issue state and either
-      # re-dispatch (still active) or clean up (genuinely resolved).
-      update_tracker_token_metadata(issue_id, running_entry)
+      workspace_path = Map.get(running_entry, :workspace_path)
+      identifier = Map.get(running_entry, :identifier, issue_id)
 
+      # 1. Create Merge Request if workspace has a git repo with commits
+      mr_url = maybe_create_merge_request(workspace_path, identifier)
+
+      # 2. Update tracker state to "Resolved"
+      Tracker.update_issue_state(issue_id, "Resolved")
+
+      # 3. Write token metadata to tracker (branch, MR URL, tokens)
+      update_tracker_completion_metadata(issue_id, running_entry, mr_url)
+
+      # 4. Send Feishu webhook notification
+      send_completion_webhook(running_entry, mr_url)
+
+      # 5. Complete and cleanup
       state
       |> complete_issue(issue_id)
-      |> schedule_issue_retry(issue_id, 1, %{
-        identifier: running_entry.identifier,
-        delay_type: :continuation,
-        worker_host: Map.get(running_entry, :worker_host),
-        workspace_path: Map.get(running_entry, :workspace_path)
-      })
+      |> cleanup_issue_workspace(identifier, Map.get(running_entry, :worker_host))
+      |> release_issue_claim(issue_id)
     end
   end
 

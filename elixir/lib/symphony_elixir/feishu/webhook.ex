@@ -8,8 +8,6 @@ defmodule SymphonyElixir.Feishu.Webhook do
 
   require Logger
 
-  @webhook_base_url "https://open.feishu.cn/open-apis/bot/v2/hook"
-
   @type notification :: %{
     identifier: String.t(),
     title: String.t(),
@@ -66,12 +64,15 @@ defmodule SymphonyElixir.Feishu.Webhook do
     end
   end
 
-  defp resolve_webhook_url(url) when is_binary(url) do
-    case SymphonyElixir.Config.Schema.env_reference_name(url) do
-      {:ok, env_name} -> System.get_env(env_name) || url
-      :error -> url
+  defp resolve_webhook_url("$" <> env_name = url) when is_binary(url) do
+    if String.match?(env_name, ~r/^[A-Za-z_][A-Za-z0-9_]*$/) do
+      System.get_env(env_name) || url
+    else
+      url
     end
   end
+
+  defp resolve_webhook_url(url), do: url
 
   defp build_card_payload(notification) do
     status = Map.get(notification, :status, "Unknown")

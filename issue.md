@@ -1,3 +1,71 @@
+## [2026-05-31] ✅ MILESTONE: Symphony task lifecycle closed
+
+**Status**: Complete. End-to-end lifecycle verified and running on port 3100.
+
+**Completed capabilities**:
+- Bitable tracker polling (5s interval) + candidate discovery from active states
+- Claude CLI agent dispatch with multi-turn session management (`--resume`)
+- Per-issue workspace isolation under `/tmp/symphony_workspaces/`
+- Token accounting, branch/MR metadata write-back to Bitable
+- State reconciliation (terminal cleanup, stall detection, continuation retry)
+- Live Phoenix dashboard at :3100
+- Feishu webhook notifications on task completion
+- E2E flow: Bitable Open → dispatch → Claude runs → metadata written → In Progress → complete → Resolved
+
+**Evidence**: Service running (beam PID 2366), dashboard live, recent commits fixing reconciliation and max_turns bugs confirmed the loop is active.
+
+**Remaining enhancements** (tracked as separate issues below):
+- Persist retry queue across restarts
+- Configurable observability settings
+- First-class tracker write APIs
+- Pluggable tracker adapters
+
+---
+
+## [ENHANCEMENT] Persist retry queue and session metadata across process restarts
+
+**Priority**: P1 — Essential for production reliability
+**Source**: SPEC.md:2101
+
+Currently the retry queue lives only in the Orchestrator GenServer state. If the BEAM process restarts, pending retries and in-flight session metadata are lost. Issues that were mid-retry may get stuck or require manual intervention.
+
+**Scope**: Persist retry queue to ETS/DETS or a lightweight file-based store. Restore on startup. Consider replaying in-flight sessions against the tracker to determine which need re-dispatch.
+
+---
+
+## [ENHANCEMENT] Make observability settings configurable in WORKFLOW.md front matter
+
+**Priority**: P2 — Operational flexibility
+**Source**: SPEC.md:2102
+
+Dashboard refresh rate, log verbosity, and output format are hardcoded. Teams should be able to tune these per workflow without code changes.
+
+**Scope**: Add `observability` section to WORKFLOW.md schema with configurable fields. Thread through Config module to dashboard and logger.
+
+---
+
+## [ENHANCEMENT] Add first-class tracker write APIs (comments/state transitions)
+
+**Priority**: P2 — Enables complex workflows
+**Source**: SPEC.md:2104
+
+Currently tracker writes are limited to basic state updates and metadata. Orchestrator should expose first-class APIs for posting comments, triggering state transitions, and linking PRs — allowing the workflow prompt to request these actions.
+
+**Scope**: Extend Tracker behaviour with `post_comment/3`, `transition_state/3`, `link_pr/3`. Implement for Bitable adapter. Wire through orchestrator as agent-callable actions.
+
+---
+
+## [ENHANCEMENT] Add pluggable issue tracker adapters beyond Bitable
+
+**Priority**: P3 — Future extensibility
+**Source**: SPEC.md:2106
+
+Only Feishu Bitable adapter exists. The Tracker behaviour is already defined but should be validated against at least one more backend (GitHub Issues, Jira, etc.) to ensure the abstraction holds.
+
+**Scope**: Extract Tracker behaviour to a formal contract. Add a second adapter. Ensure `config.tracker.kind` dispatches correctly via factory.
+
+---
+
 ## [2026-05-31] Dashboard shows 0 running tasks despite active dispatch
 
 **Problem**: Dashboard at :3100 always shows "No active sessions". Tasks were dispatched from Bitable tracker but killed ~30s later.
