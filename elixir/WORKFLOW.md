@@ -24,7 +24,7 @@ claude:
 decomposition:
   enabled: true
   complexityKeywords: ["epic", "complex", "multi-part", "refactor", "migration"]
-  descriptionLengthThreshold: 2000
+  descriptionLengthThreshold: 500
   maxSubTasks: 5
   maxSubTasksTotal: 15
   plannerMaxTurns: 3
