@@ -70,6 +70,7 @@ defmodule SymphonyElixir.Orchestrator do
     }
 
     run_terminal_workspace_cleanup()
+    recover_orphan_in_progress()
     state = schedule_tick(state, 0)
 
     {:ok, state}
