@@ -462,53 +462,24 @@ defmodule SymphonyElixirWeb.DashboardLive do
     end
   end
 
-  defp current_progress_summary(entry, now) do
-    runtime = format_runtime_seconds(runtime_seconds_from_started_at(entry.started_at, now))
-    turns = entry.turn_count || 0
-    tokens = get_in(entry, [:tokens, :total_tokens])
-
-    [
-      entry.state || "未知状态",
-      "已运行 #{runtime}",
-      "#{turns} 轮对话",
-      "#{format_int(tokens)} tokens"
-    ]
-    |> Enum.join(" · ")
+  defp current_progress_summary(entry, _now) do
+    task_detail(entry, :progress) || "等待 agent 首次进度事件。"
   end
 
   defp blocker_summary(entry) do
-    event = entry.last_event |> to_string() |> String.downcase()
-    message = entry.last_message |> to_string() |> String.downcase()
-
-    cond do
-      String.contains?(event, "input_required") or String.contains?(message, "input required") ->
-        "等待操作者输入，agent 无法继续执行。"
-
-      String.contains?(event, "approval_required") or String.contains?(message, "approval") ->
-        "等待审批通过，agent 无法继续执行。"
-
-      true ->
-        "当前无明显卡点。"
-    end
+    task_detail(entry, :blocker) || "当前无真实卡点事件。"
   end
 
   defp next_plan_summary(entry) do
-    event = entry.last_event |> to_string() |> String.downcase()
-    message = entry.last_message |> to_string() |> String.downcase()
+    task_detail(entry, :plan) || "等待 agent 计划事件。"
+  end
 
-    cond do
-      String.contains?(event, "input_required") or String.contains?(message, "input required") ->
-        "请提供所需输入，之后 agent 会继续执行。"
+  defp task_detail(entry, key) do
+    details = Map.get(entry, :task_details) || %{}
 
-      String.contains?(event, "approval_required") or String.contains?(message, "approval") ->
-        "请审批请求，通过后 agent 会继续执行。"
-
-      is_nil(entry.last_message) and is_nil(entry.last_event) ->
-        "等待 agent 首次进度事件。"
-
-      true ->
-        "继续监控，下一次刷新将显示最新 Codex 更新。"
-    end
+    details
+    |> Map.get(key)
+    |> blank_to_nil()
   end
 
   defp last_activity_summary(entry) do

@@ -200,6 +200,11 @@ defmodule SymphonyElixir.ExtensionsTest do
                  "turn_count" => 7,
                  "last_event" => "notification",
                  "last_message" => "rendered",
+                 "task_details" => %{
+                   "progress" => "reading tracker events",
+                   "blocker" => nil,
+                   "plan" => "in_progress: wire task details"
+                 },
                  "started_at" => state_payload["running"] |> List.first() |> Map.fetch!("started_at"),
                  "last_event_at" => nil,
                  "tracker_url" => "https://qcnh0bjty8ev.feishu.cn/base/test-app-token/table/test-table-id?record=issue-http",
@@ -229,6 +234,11 @@ defmodule SymphonyElixir.ExtensionsTest do
                  "blocked_at" => state_payload["blocked"] |> List.first() |> Map.fetch!("blocked_at"),
                  "last_event" => "turn_input_required",
                  "last_message" => "turn blocked: waiting for user input",
+                 "task_details" => %{
+                   "progress" => nil,
+                   "blocker" => "operator input required: missing reviewer choice",
+                   "plan" => nil
+                 },
                  "last_event_at" => state_payload["blocked"] |> List.first() |> Map.fetch!("last_event_at")
                }
              ],
@@ -267,6 +277,11 @@ defmodule SymphonyElixir.ExtensionsTest do
                "started_at" => issue_payload["running"]["started_at"],
                "last_event" => "notification",
                "last_message" => "rendered",
+               "task_details" => %{
+                 "progress" => "reading tracker events",
+                 "blocker" => nil,
+                 "plan" => "in_progress: wire task details"
+               },
                "last_event_at" => nil,
                "tokens" => %{"input_tokens" => 4, "output_tokens" => 8, "total_tokens" => 12}
              },
@@ -452,8 +467,9 @@ defmodule SymphonyElixir.ExtensionsTest do
     assert expanded_html =~ "下一步"
     assert expanded_html =~ "最近活动"
     assert expanded_html =~ "工作区"
-    assert expanded_html =~ "当前无明显卡点。"
-    assert expanded_html =~ "继续监控，下一次刷新将显示最新 Codex 更新。"
+    assert expanded_html =~ "reading tracker events"
+    assert expanded_html =~ "in_progress: wire task details"
+    assert expanded_html =~ "当前无真实卡点事件。"
 
     collapsed_html =
       view
@@ -617,6 +633,10 @@ defmodule SymphonyElixir.ExtensionsTest do
           last_codex_message: "rendered",
           last_codex_timestamp: nil,
           last_codex_event: :notification,
+          task_details: %{
+            progress: "reading tracker events",
+            plan: "in_progress: wire task details"
+          },
           codex_input_tokens: 4,
           codex_output_tokens: 8,
           codex_total_tokens: 12,
@@ -642,6 +662,9 @@ defmodule SymphonyElixir.ExtensionsTest do
           workspace_path: "/workspaces/MT-BLOCKED",
           session_id: "thread-blocked",
           blocked_at: DateTime.utc_now(),
+          task_details: %{
+            blocker: "operator input required: missing reviewer choice"
+          },
           last_codex_event: :turn_input_required,
           last_codex_message: %{
             event: :turn_input_required,
