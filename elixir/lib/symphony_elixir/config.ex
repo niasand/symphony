@@ -138,6 +138,12 @@ defmodule SymphonyElixir.Config do
       settings.tracker.kind == "linear" and not is_binary(settings.tracker.project_slug) ->
         {:error, :missing_linear_project_slug}
 
+      settings.tracker.kind == "bitable" and not is_binary(settings.tracker.bitable_app_token) ->
+        {:error, :missing_bitable_app_token}
+
+      settings.tracker.kind == "bitable" and not is_binary(settings.tracker.bitable_table_id) ->
+        {:error, :missing_bitable_table_id}
+
       true ->
         :ok
     end
@@ -156,6 +162,12 @@ defmodule SymphonyElixir.Config do
 
       :workflow_front_matter_not_a_map ->
         "Failed to parse WORKFLOW.md: workflow front matter must decode to a map"
+
+      :missing_bitable_app_token ->
+        "Invalid WORKFLOW.md config: tracker.bitable_app_token is required for bitable tracker (or set FEISHU_BITABLE_APP_TOKEN env)"
+
+      :missing_bitable_table_id ->
+        "Invalid WORKFLOW.md config: tracker.bitable_table_id is required for bitable tracker (or set FEISHU_BITABLE_TABLE_ID env)"
 
       other ->
         "Invalid WORKFLOW.md config: #{inspect(other)}"

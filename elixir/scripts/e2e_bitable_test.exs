@@ -16,7 +16,7 @@ end
 
 alias SymphonyElixir.Feishu.Bitable.{Adapter, Issue}
 
-record_id = "recvlbhYJa244u"
+record_id = "recvlbLuz4sNq0"
 
 IO.puts("\n=== Step 1: Fetch candidate issues (待处理) ===")
 
@@ -117,7 +117,7 @@ case Adapter.fetch_issues_by_states(["Open"]) do
           end
 
           IO.puts("\n=== E2E Test Complete ===")
-          IO.puts("Check the Bitable: https://qcnh0bjty8ev.feishu.cn/base/Nf80b3bL3ahtLgsMDezcgFi7nse")
+          IO.puts("Check the Bitable: https://qcnh0bjty8ev.feishu.cn/base/Ir7pbRChgaYRYns4hmWcNfHJnKe")
 
         {:error, reason} ->
           IO.puts("✗ Failed to claim task: #{inspect(reason)}")

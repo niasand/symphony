@@ -15,7 +15,7 @@ defmodule SymphonyElixir.Feishu.Bitable.Issue do
       description: fields["Description"],
       priority: parse_priority(select_value(fields["Priority"])),
       state: select_value(fields["Status"]) || "Open",
-      branch_name: nil,
+      branch_name: select_value(fields["Branch"]),
       url: nil,
       labels: parse_labels(fields["Labels"]),
       blocked_by: [],
