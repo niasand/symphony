@@ -55,36 +55,31 @@ case Adapter.fetch_issues_by_states(["待处理"]) do
           ], cd: workspace, stderr_to_stdout: true)
 
           # Parse the final result event for token usage
-          {input_tokens, output_tokens, total_tokens, cost_usd, duration_ms} =
+          {input_tokens, output_tokens, total_tokens} =
             output
             |> String.split("\n")
             |> Enum.filter(&String.starts_with?(&1, "{"))
-            |> Enum.flat_map(fn line ->
+            |> Enum.reduce({0, 0, 0}, fn line, acc ->
               case Jason.decode(line) do
                 {:ok, %{"type" => "result", "usage" => usage}} when is_map(usage) ->
                   it = Map.get(usage, "input_tokens", 0)
                   ot = Map.get(usage, "output_tokens", 0)
-                  [{it, ot, it + ot}]
+                  {it, ot, it + ot}
 
                 {:ok, %{"type" => "result", "modelUsage" => mu}} when is_map(mu) ->
-                  [{it, ot, _}] =
-                    mu |> Map.values() |> Enum.map(fn m ->
-                      {Map.get(m, "inputTokens", 0), Map.get(m, "outputTokens", 0), 0}
+                  {it, ot} =
+                    mu |> Map.values() |> Enum.reduce({0, 0}, fn m, {i, o} ->
+                      {i + Map.get(m, "inputTokens", 0), o + Map.get(m, "outputTokens", 0)}
                     end)
-                  total = it + ot
-                  [{it, ot, total}]
+                  {it, ot, it + ot}
 
                 _ ->
-                  []
+                  acc
               end
             end)
-            |> List.last({0, 0, 0})
 
-          cost_line = output |> String.split("\n") |> Enum.find(&String.contains?(&1, "total_cost_usd"))
-          cost = if cost_line, do: (Jason.decode!(cost_line)["total_cost_usd"] || 0), else: 0
-
-          dur_line = output |> String.split("\n") |> Enum.find(&String.contains?(&1, "duration_ms"))
-          duration = if dur_line, do: (Jason.decode!(dur_line)["duration_ms"] || 0), else: 0
+          cost = 0
+          duration = 0
 
           success = exit_code == 0 || String.contains?(output, "DONE")
 
