@@ -1,10 +1,9 @@
 defmodule SymphonyElixir.Feishu.Bitable.Issue do
   @moduledoc """
-  Converts Bitable records to SymphonyElixir.Linear.Issue structs.
-  Reuses the existing Issue struct so the rest of Symphony doesn't need changes.
+  Converts Bitable records to SymphonyElixir.Tracker.Issue structs.
   """
 
-  alias SymphonyElixir.Linear.Issue
+  alias SymphonyElixir.Tracker.Issue
 
   @spec from_record(map()) :: Issue.t()
   def from_record(%{"record_id" => record_id, "fields" => fields}) do

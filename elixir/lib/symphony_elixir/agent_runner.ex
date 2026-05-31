@@ -1,13 +1,14 @@
 defmodule SymphonyElixir.AgentRunner do
   @moduledoc """
-  Executes a single Linear issue in its workspace with the configured coding agent.
+  Executes a single issue in its workspace with the configured coding agent.
   """
 
   require Logger
 
   alias SymphonyElixir.Claude.CLI, as: ClaudeCLI
   alias SymphonyElixir.Codex.AppServer
-  alias SymphonyElixir.{Config, Linear.Issue, PromptBuilder, Tracker, Workspace}
+  alias SymphonyElixir.{Config, PromptBuilder, Tracker, Workspace}
+  alias SymphonyElixir.Tracker.Issue
 
   @type worker_host :: String.t() | nil
 
@@ -157,7 +158,7 @@ defmodule SymphonyElixir.AgentRunner do
     """
     Continuation guidance:
 
-    - The previous agent turn completed normally, but the Linear issue is still in an active state.
+    - The previous agent turn completed normally, but the issue is still in an active state.
     - This is continuation turn ##{turn_number} of #{max_turns} for the current agent run.
     - Resume from the current workspace and workpad state instead of restarting from scratch.
     - The original task instructions and prior turn context are already present in this thread, so do not restate them before acting.

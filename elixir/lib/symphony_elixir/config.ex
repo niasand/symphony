@@ -7,7 +7,7 @@ defmodule SymphonyElixir.Config do
   alias SymphonyElixir.Workflow
 
   @default_prompt_template """
-  You are working on a Linear issue.
+  You are working on a task.
 
   Identifier: {{ issue.identifier }}
   Title: {{ issue.title }}
@@ -125,26 +125,14 @@ defmodule SymphonyElixir.Config do
   end
 
   defp validate_semantics(settings) do
-    with :ok <- validate_tracker_kind(settings.tracker.kind),
-         :ok <- validate_linear_tracker(settings.tracker) do
+    with :ok <- validate_tracker_kind(settings.tracker.kind) do
       validate_bitable_tracker(settings.tracker)
     end
   end
 
   defp validate_tracker_kind(nil), do: {:error, :missing_tracker_kind}
-  defp validate_tracker_kind(kind) when kind in ["linear", "memory", "bitable"], do: :ok
+  defp validate_tracker_kind(kind) when kind in ["memory", "bitable"], do: :ok
   defp validate_tracker_kind(kind), do: {:error, {:unsupported_tracker_kind, kind}}
-
-  defp validate_linear_tracker(%{kind: "linear", api_key: api_key}) when not is_binary(api_key) do
-    {:error, :missing_linear_api_token}
-  end
-
-  defp validate_linear_tracker(%{kind: "linear", project_slug: project_slug})
-       when not is_binary(project_slug) do
-    {:error, :missing_linear_project_slug}
-  end
-
-  defp validate_linear_tracker(_tracker), do: :ok
 
   defp validate_bitable_tracker(%{kind: "bitable", bitable_app_token: app_token})
        when not is_binary(app_token) do
