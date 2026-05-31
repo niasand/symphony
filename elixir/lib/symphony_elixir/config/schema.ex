@@ -94,7 +94,7 @@ defmodule SymphonyElixir.Config.Schema do
 
     @primary_key false
     embedded_schema do
-      field(:root, :string, default: Path.join(System.tmp_dir!(), "symphony_workspaces"))
+      field(:root, :string)
     end
 
     @spec changeset(%__MODULE__{}, map()) :: Ecto.Changeset.t()
@@ -413,6 +413,15 @@ defmodule SymphonyElixir.Config.Schema do
   end
 
   defp finalize_settings(settings) do
+    tracker = %{
+      settings.tracker
+      | bitable_app_token:
+          resolve_secret_value(
+            settings.tracker.bitable_app_token,
+            System.get_env("SYMPHONY_BITABLE_APP_TOKEN") || System.get_env("FEISHU_BITABLE_APP_TOKEN")
+          )
+    }
+
     workspace = %{
       settings.workspace
       | root: resolve_path_value(settings.workspace.root, Path.join(System.tmp_dir!(), "symphony_workspaces"))
@@ -424,7 +433,7 @@ defmodule SymphonyElixir.Config.Schema do
         turn_sandbox_policy: normalize_optional_map(settings.codex.turn_sandbox_policy)
     }
 
-    %{settings | workspace: workspace, codex: codex}
+    %{settings | tracker: tracker, workspace: workspace, codex: codex}
   end
 
   defp normalize_keys(value) when is_map(value) do
@@ -454,18 +463,35 @@ defmodule SymphonyElixir.Config.Schema do
   defp drop_nil_values(value) when is_list(value), do: Enum.map(value, &drop_nil_values/1)
   defp drop_nil_values(value), do: value
 
+  defp resolve_path_value(value, default) when value in [nil, ""], do: default
+
   defp resolve_path_value(value, default) when is_binary(value) do
     case normalize_path_token(value) do
       :missing ->
-        default
-
-      "" ->
         default
 
       path ->
         path
     end
   end
+
+  defp resolve_secret_value(value, fallback) when is_binary(value) do
+    case env_reference_name(value) do
+      {:ok, env_name} -> normalize_secret_value(System.get_env(env_name))
+      :error -> normalize_secret_value(value)
+    end || normalize_secret_value(fallback)
+  end
+
+  defp resolve_secret_value(_value, fallback), do: normalize_secret_value(fallback)
+
+  defp normalize_secret_value(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      normalized -> normalized
+    end
+  end
+
+  defp normalize_secret_value(_value), do: nil
 
   defp normalize_path_token(value) when is_binary(value) do
     case env_reference_name(value) do

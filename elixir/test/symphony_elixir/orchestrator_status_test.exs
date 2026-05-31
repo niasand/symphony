@@ -962,10 +962,16 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
 
   test "orchestrator blocks stalled workers that are waiting on MCP elicitation" do
     write_workflow_file!(Workflow.workflow_file_path(),
+      tracker_kind: "memory",
       codex_stall_timeout_ms: 1_000
     )
 
     issue_id = "issue-mcp-elicitation-stall"
+
+    Application.put_env(:symphony_elixir, :memory_tracker_issues, [
+      %Issue{id: issue_id, identifier: "MT-MCP", state: "In Progress"}
+    ])
+
     orchestrator_name = Module.concat(__MODULE__, :McpElicitationBlockOrchestrator)
     {:ok, pid} = Orchestrator.start_link(name: orchestrator_name)
 
@@ -1030,9 +1036,14 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
   end
 
   test "orchestrator blocks failed workers after app-server reports input required" do
-    write_workflow_file!(Workflow.workflow_file_path(), tracker_api_token: nil)
+    write_workflow_file!(Workflow.workflow_file_path(), tracker_kind: "memory")
 
     issue_id = "issue-input-required"
+
+    Application.put_env(:symphony_elixir, :memory_tracker_issues, [
+      %Issue{id: issue_id, identifier: "MT-INPUT", state: "In Progress"}
+    ])
+
     orchestrator_name = Module.concat(__MODULE__, :InputRequiredBlockOrchestrator)
     {:ok, pid} = Orchestrator.start_link(name: orchestrator_name)
 
@@ -1083,9 +1094,14 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
   end
 
   test "orchestrator blocks normal worker exits after input required completion" do
-    write_workflow_file!(Workflow.workflow_file_path(), tracker_api_token: nil)
+    write_workflow_file!(Workflow.workflow_file_path(), tracker_kind: "memory")
 
     issue_id = "issue-input-required-normal"
+
+    Application.put_env(:symphony_elixir, :memory_tracker_issues, [
+      %Issue{id: issue_id, identifier: "MT-INPUT-NORMAL", state: "In Progress"}
+    ])
+
     orchestrator_name = Module.concat(__MODULE__, :InputRequiredNormalBlockOrchestrator)
     {:ok, pid} = Orchestrator.start_link(name: orchestrator_name)
 
@@ -1181,8 +1197,7 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
 
     rendered = StatusDashboard.format_snapshot_content_for_test(snapshot_data, 0.0)
 
-    assert rendered =~ "│ Project:"
-    assert rendered =~ "https://linear.app/project/project/issues"
+    refute rendered =~ "│ Project:"
     assert rendered =~ "│ Dashboard:"
     assert rendered =~ "http://127.0.0.1:4000/"
   end
@@ -1676,7 +1691,7 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
         "method" => "codex/event/agent_reasoning",
         "params" => %{
           "msg" => %{
-            "payload" => %{"summaryText" => "compare retry paths for Linear polling"}
+            "payload" => %{"summaryText" => "compare retry paths for tracker polling"}
           }
         }
       }

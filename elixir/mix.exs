@@ -14,6 +14,10 @@ defmodule SymphonyElixir.MixProject do
         ],
         ignore_modules: [
           SymphonyElixir.Config,
+          SymphonyElixir.Feishu.Bitable.Adapter,
+          SymphonyElixir.Feishu.Bitable.Auth,
+          SymphonyElixir.Feishu.Bitable.Client,
+          SymphonyElixir.Feishu.Bitable.Issue,
           SymphonyElixir.Linear.Client,
           SymphonyElixir.SpecsCheck,
           SymphonyElixir.Orchestrator,
