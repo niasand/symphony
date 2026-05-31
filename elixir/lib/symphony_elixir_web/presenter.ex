@@ -16,11 +16,13 @@ defmodule SymphonyElixirWeb.Presenter do
           counts: %{
             running: length(snapshot.running),
             retrying: length(snapshot.retrying),
-            blocked: length(Map.get(snapshot, :blocked, []))
+            blocked: length(Map.get(snapshot, :blocked, [])),
+            parents: length(Map.get(snapshot, :parents, []))
           },
           running: Enum.map(snapshot.running, &running_entry_payload/1),
           retrying: Enum.map(snapshot.retrying, &retry_entry_payload/1),
           blocked: Enum.map(Map.get(snapshot, :blocked, []), &blocked_entry_payload/1),
+          parents: Enum.map(Map.get(snapshot, :parents, []), &parent_entry_payload/1),
           codex_totals: snapshot.codex_totals,
           rate_limits: snapshot.rate_limits
         }
@@ -147,6 +149,17 @@ defmodule SymphonyElixirWeb.Presenter do
       last_event: entry.last_codex_event,
       last_message: summarize_message(entry.last_codex_message),
       last_event_at: iso8601(entry.last_codex_timestamp)
+    }
+  end
+
+  defp parent_entry_payload(entry) do
+    %{
+      issue_id: entry.issue_id,
+      issue_identifier: entry.identifier,
+      phase: entry.phase,
+      child_count: entry.child_count,
+      child_ids: entry.child_ids,
+      workspace_path: Map.get(entry, :workspace_path)
     }
   end
 
