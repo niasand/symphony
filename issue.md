@@ -1,3 +1,15 @@
+## [2026-05-31] Dashboard shows 0 running tasks despite active dispatch
+
+**Problem**: Dashboard at :3100 always shows "No active sessions". Tasks were dispatched from Bitable tracker but killed ~30s later.
+
+**Root cause**: `WORKFLOW.md` configured `active_states: ["Open"]`. After dispatch, `Tracker.update_issue_state` sets Bitable record to "In Progress". On next poll cycle, `reconcile_running_issues` finds "In Progress" is neither in `active_states` nor `terminal_states`, falls through to the `true` catch-all branch → logs `"Issue moved to non-active state: state=In Progress; stopping active agent"` and terminates the worker. Round-trip: dispatch → update tracker → reconcile kills agent ≈ poll interval (5s).
+
+**Fix**: Added `"In Progress"` to `active_states` in both `WORKFLOW.md` and `WORKFLOW.bitable.md`. `WorkflowStore` hot-reloads within 1s.
+
+**Key code path**: `orchestrator.ex:398-418` (`reconcile_issue_state/4`) — the `cond` has three explicit checks (terminal, unroutable, active) then a `true` fallback that kills the agent. Any state not explicitly listed in `active_states` or `terminal_states` is treated as non-active.
+
+**Files changed**: `elixir/WORKFLOW.md`, `elixir/WORKFLOW.bitable.md`
+
 ## [2026-05-31] Fix error_max_turns handling and tracker completion write-back
 
 **Problem 1 (P0)**: `result_error?` in Claude CLI didn't explicitly handle `error_max_turns` subtype. When Claude hit `--max-turns`, the result event was treated as an implicit non-error because the subtype wasn't in the explicit error list. Token data was extracted but the flow was fragile and hard to reason about.
