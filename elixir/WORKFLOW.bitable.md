@@ -32,4 +32,7 @@ worker:
 
 server:
   port: 3100
+
+notifications:
+  feishuWebhookUrl: "$FEISHU_WEBHOOK_URL"
 ---

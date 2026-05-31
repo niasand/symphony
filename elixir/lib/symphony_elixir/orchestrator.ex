@@ -8,7 +8,8 @@ defmodule SymphonyElixir.Orchestrator do
   import Bitwise, only: [<<<: 2]
 
   alias SymphonyElixir.{AgentRunner, Config, Git, StatusDashboard, Tracker, Workspace}
-  alias SymphonyElixir.Feishu.{Bitable.Adapter, as: BitableAdapter, Webhook}
+  alias SymphonyElixir.Feishu.Bitable.Adapter, as: BitableAdapter
+  alias SymphonyElixir.Feishu.Webhook
   alias SymphonyElixir.Tracker.Issue
 
   @continuation_retry_delay_ms 1_000
@@ -220,9 +221,10 @@ defmodule SymphonyElixir.Orchestrator do
       send_completion_webhook(running_entry, mr_url)
 
       # 5. Complete and cleanup
+      cleanup_issue_workspace(identifier, Map.get(running_entry, :worker_host))
+
       state
       |> complete_issue(issue_id)
-      |> cleanup_issue_workspace(identifier, Map.get(running_entry, :worker_host))
       |> release_issue_claim(issue_id)
     end
   end
@@ -1364,6 +1366,7 @@ defmodule SymphonyElixir.Orchestrator do
         %{
           issue_id: issue_id,
           identifier: metadata.identifier,
+          issue: metadata.issue,
           state: metadata.issue.state,
           worker_host: Map.get(metadata, :worker_host),
           workspace_path: Map.get(metadata, :workspace_path),
@@ -1930,12 +1933,29 @@ defmodule SymphonyElixir.Orchestrator do
 
   defp integer_like(_value), do: nil
 
-  # ── Tracker status update helpers ──
+  # ── Lifecycle completion helpers ──
 
-  # Write token metadata to tracker without changing issue state.
-  # State transitions ("Resolved"/"Failed") are handled by the
-  # continuation retry or the reconciliation loop, not here.
-  defp update_tracker_token_metadata(issue_id, running_entry) when is_binary(issue_id) do
+  defp maybe_create_merge_request(nil, _identifier), do: nil
+
+  defp maybe_create_merge_request(workspace_path, identifier) when is_binary(workspace_path) do
+    title = "[Symphony] #{identifier}"
+    body = "Automated MR created by Symphony for task #{identifier}."
+
+    case Git.create_merge_request(workspace_path, identifier, title, body: body) do
+      {:ok, url} ->
+        Logger.info("Created MR for #{identifier}: #{url}")
+        url
+
+      {:error, reason} ->
+        Logger.warning("Could not create MR for #{identifier}: #{inspect(reason)}")
+        # Fallback: try reading existing PR URL
+        read_git_mr_url(workspace_path)
+    end
+  end
+
+  defp maybe_create_merge_request(_workspace_path, _identifier), do: nil
+
+  defp update_tracker_completion_metadata(issue_id, running_entry, mr_url) when is_binary(issue_id) do
     input_tokens = Map.get(running_entry, :codex_input_tokens, 0)
     output_tokens = Map.get(running_entry, :codex_output_tokens, 0)
     total_tokens = Map.get(running_entry, :codex_total_tokens, 0)
@@ -1949,7 +1969,7 @@ defmodule SymphonyElixir.Orchestrator do
       total_tokens: total_tokens,
       retry_count: retry_count,
       branch_name: branch_name,
-      mr_url: read_git_mr_url(workspace_path)
+      mr_url: mr_url
     }
 
     case Tracker.adapter() do
@@ -1959,7 +1979,7 @@ defmodule SymphonyElixir.Orchestrator do
             :ok
 
           {:error, reason} ->
-            Logger.warning("Failed to update token metadata for issue_id=#{issue_id}: #{inspect(reason)}")
+            Logger.warning("Failed to update completion metadata for issue_id=#{issue_id}: #{inspect(reason)}")
         end
 
       _ ->
@@ -1967,7 +1987,34 @@ defmodule SymphonyElixir.Orchestrator do
     end
   end
 
-  defp update_tracker_token_metadata(_issue_id, _running_entry), do: :ok
+  defp update_tracker_completion_metadata(_issue_id, _running_entry, _mr_url), do: :ok
+
+  defp send_completion_webhook(running_entry, mr_url) do
+    notification = %{
+      identifier: Map.get(running_entry, :identifier, "unknown"),
+      title: issue_title_from_entry(running_entry),
+      status: "Resolved",
+      mr_url: mr_url,
+      branch_name: Map.get(running_entry, :workspace_path) |> read_git_branch(),
+      input_tokens: Map.get(running_entry, :codex_input_tokens, 0),
+      output_tokens: Map.get(running_entry, :codex_output_tokens, 0),
+      total_tokens: Map.get(running_entry, :codex_total_tokens, 0),
+      error: nil
+    }
+
+    case Webhook.send_completion_notification(notification) do
+      :ok -> :ok
+      {:error, reason} ->
+        Logger.warning("Feishu webhook notification failed: #{inspect(reason)}")
+    end
+  end
+
+  defp issue_title_from_entry(%{issue: %Issue{title: title}}) when is_binary(title), do: title
+  defp issue_title_from_entry(_entry), do: "Untitled"
+
+  # ── Tracker status update helpers ──
+
+  # Replaced by update_tracker_completion_metadata/3 which includes MR URL
 
   defp update_tracker_failure(issue_id, running_entry, reason) when is_binary(issue_id) do
     input_tokens = Map.get(running_entry, :codex_input_tokens, 0)

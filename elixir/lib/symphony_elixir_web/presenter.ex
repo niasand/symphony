@@ -104,6 +104,7 @@ defmodule SymphonyElixirWeb.Presenter do
       issue_id: entry.issue_id,
       issue_identifier: entry.identifier,
       issue: entry_issue_payload(entry),
+      tracker_url: tracker_record_url(entry.issue_id),
       state: entry.state,
       worker_host: Map.get(entry, :worker_host),
       workspace_path: Map.get(entry, :workspace_path),
@@ -250,4 +251,18 @@ defmodule SymphonyElixirWeb.Presenter do
   end
 
   defp iso8601(_datetime), do: nil
+
+  defp tracker_record_url(nil), do: nil
+
+  defp tracker_record_url(issue_id) do
+    tracker = Config.settings!().tracker
+    app_token = Map.get(tracker, :bitable_app_token)
+    table_id = Map.get(tracker, :bitable_table_id)
+
+    if is_binary(app_token) and is_binary(table_id) and app_token != "" and table_id != "" do
+      "https://qcnh0bjty8ev.feishu.cn/base/#{app_token}/table/#{table_id}?record=#{issue_id}"
+    else
+      nil
+    end
+  end
 end
