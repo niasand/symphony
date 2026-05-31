@@ -17,7 +17,10 @@ defmodule SymphonyElixir.Tracker.Issue do
     labels: [],
     assigned_to_worker: true,
     created_at: nil,
-    updated_at: nil
+    updated_at: nil,
+    parent_id: nil,
+    sub_task_ids: [],
+    complexity: nil
   ]
 
   @type t :: %__MODULE__{
@@ -33,7 +36,10 @@ defmodule SymphonyElixir.Tracker.Issue do
           labels: [String.t()],
           assigned_to_worker: boolean(),
           created_at: DateTime.t() | nil,
-          updated_at: DateTime.t() | nil
+          updated_at: DateTime.t() | nil,
+          parent_id: String.t() | nil,
+          sub_task_ids: [String.t()],
+          complexity: :simple | :complex | nil
         }
 
   @spec label_names(t()) :: [String.t()]

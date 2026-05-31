@@ -251,12 +251,16 @@ defmodule SymphonyElixirWeb.DashboardLive do
                   >
                     <td colspan="7">
                       <div class="running-detail-panel">
-                        <div class="running-summary-grid">
-                          <div :for={{label, value} <- running_summary_items(entry, @now)} class="summary-item">
-                            <span class="summary-label"><%= label %></span>
-                            <p class="summary-value"><%= value %></p>
-                          </div>
-                        </div>
+                        <table class="summary-table">
+                          <tbody>
+                            <%= for {label, value} <- running_summary_items(entry, @now) do %>
+                              <tr>
+                                <td class="summary-label"><%= label %></td>
+                                <td class="summary-value"><%= value %></td>
+                              </tr>
+                            <% end %>
+                          </tbody>
+                        </table>
                       </div>
                     </td>
                   </tr>
