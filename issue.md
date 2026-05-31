@@ -1,3 +1,34 @@
+## [2026-05-31] ✅ FEATURE: Intelligent task decomposition with fan-out subagents
+
+**Status**: Implemented (decomposition.enabled: false by default)
+
+**What**: Symphony now evaluates task complexity before dispatch. Simple tasks run as before (single agent). Complex tasks (epic labels, long descriptions, complexity keywords) trigger a planner → fan-out → merge pipeline.
+
+**Architecture** (hybrid mode):
+1. **Orchestrator classification** — `ComplexityClassifier` pure-function checks labels, description length, keywords. Zero I/O.
+2. **Planner agent** — Complex tasks dispatched to a planner agent with specialized prompt, outputs `.symphony/decomposition.json`.
+3. **Fan-out** — Planner result parsed by `TaskDecomposer`, sub-tasks created in tracker as "Open" issues with `parent_id`. Next poll cycle dispatches them as normal agents.
+4. **Auto-merge** — When all children complete, orchestrator dispatches a merge agent for integration verification, then marks parent as "Resolved".
+
+**Config** (WORKFLOW.md):
+```yaml
+decomposition:
+  enabled: false  # feature flag
+  complexityKeywords: ["epic", "complex", "multi-part", "refactor", "migration"]
+  descriptionLengthThreshold: 2000
+  maxSubTasks: 5
+  maxSubTasksTotal: 15
+  plannerMaxTurns: 3
+  mergeMaxTurns: 3
+```
+
+**New files**: `complexity_classifier.ex`, `planner_prompt.ex`, `task_decomposer.ex`, `complexity_classifier_test.exs`
+**Modified files**: `orchestrator.ex` (parents state + classify/dispatch_planner/dispatch_merge/reconcile_parent_issues), `tracker/issue.ex` (+3 fields), `config/schema.ex` (+Decomposition), `tracker.ex` (+create_issue), `tracker/memory.ex` (+create_issue), `feishu/bitable/{client,adapter,issue}.ex` (+create_record/create_issue/parent_id), `agent_runner.ex` (+prompt_override)
+
+**Fallback**: If decomposition is disabled or planner fails, falls back to single-agent path. Zero behavior change when `enabled: false`.
+
+---
+
 ## [2026-05-31] ✅ MILESTONE: Symphony task lifecycle closed
 
 **Status**: Complete. End-to-end lifecycle verified and running on port 3100.
@@ -140,3 +171,4 @@ Only Feishu Bitable adapter exists. The Tracker behaviour is already defined but
 [AI-REVIEW] Large commit detected: 331 lines added. Consider reviewing for AI Psychosis.
 [AI-REVIEW] Large commit detected: 519 lines added. Consider reviewing for AI Psychosis.
 [AI-REVIEW] Large commit detected: 211 lines added. Consider reviewing for AI Psychosis.
+[AI-REVIEW] Large commit detected: 717 lines added. Consider reviewing for AI Psychosis.

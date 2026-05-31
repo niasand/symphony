@@ -7,7 +7,7 @@ defmodule SymphonyElixir.Orchestrator do
   require Logger
   import Bitwise, only: [<<<: 2]
 
-  alias SymphonyElixir.{AgentRunner, Config, Git, StatusDashboard, Tracker, Workspace}
+  alias SymphonyElixir.{AgentRunner, ComplexityClassifier, Config, Git, PlannerPrompt, StatusDashboard, TaskDecomposer, Tracker, Workspace}
   alias SymphonyElixir.Feishu.Bitable.Adapter, as: BitableAdapter
   alias SymphonyElixir.Feishu.Webhook
   alias SymphonyElixir.Tracker.Issue
@@ -41,7 +41,8 @@ defmodule SymphonyElixir.Orchestrator do
       blocked: %{},
       retry_attempts: %{},
       codex_totals: nil,
-      codex_rate_limits: nil
+      codex_rate_limits: nil,
+      parents: %{}
     ]
   end
 
@@ -64,7 +65,8 @@ defmodule SymphonyElixir.Orchestrator do
       tick_timer_ref: nil,
       tick_token: nil,
       codex_totals: @empty_codex_totals,
-      codex_rate_limits: nil
+      codex_rate_limits: nil,
+      parents: %{}
     }
 
     run_terminal_workspace_cleanup()
@@ -200,6 +202,83 @@ defmodule SymphonyElixir.Orchestrator do
   end
 
   defp handle_agent_down(:normal, state, issue_id, running_entry, session_id) do
+    cond do
+      # Merge agent completed (parent is in merging phase)
+      match?(%{phase: :merging}, Map.get(state.parents, issue_id)) ->
+        handle_merge_completion(state, issue_id, running_entry, session_id)
+
+      # Planner agent completed — process decomposition
+      Map.has_key?(state.parents, issue_id) ->
+        handle_planner_completion(state, issue_id, running_entry, session_id)
+
+      # Sub-task agent completed — check if all siblings are done
+      is_sub_task?(running_entry) ->
+        handle_sub_task_completion(:normal, state, issue_id, running_entry, session_id)
+
+      true ->
+        handle_normal_agent_completion(state, issue_id, running_entry, session_id)
+    end
+  end
+
+  defp handle_agent_down(reason, state, issue_id, running_entry, session_id) do
+    cond do
+      # Merge agent failed
+      match?(%{phase: :merging}, Map.get(state.parents, issue_id)) ->
+        handle_merge_failure(state, issue_id, running_entry, session_id, reason)
+
+      # Planner agent failed — fallback to simple dispatch
+      Map.has_key?(state.parents, issue_id) ->
+        handle_planner_failure(state, issue_id, _running_entry = running_entry, session_id, reason)
+
+      # Sub-task agent failed
+      is_sub_task?(running_entry) ->
+        handle_sub_task_completion(reason, state, issue_id, running_entry, session_id)
+
+      true ->
+        if input_required_blocker?(running_entry) do
+          block_input_required_agent_down(state, issue_id, running_entry, session_id, reason)
+        else
+          retry_agent_down(state, issue_id, running_entry, session_id, reason)
+        end
+    end
+  end
+
+  defp block_input_required_agent_down(state, issue_id, running_entry, session_id, reason) do
+    error = blocker_error(running_entry, "agent exited: #{inspect(reason)}")
+
+    Logger.warning("Agent task blocked for issue_id=#{issue_id} issue_identifier=#{running_entry.identifier} session_id=#{session_id}: #{error}")
+
+    block_issue_from_entry(state, issue_id, running_entry, error)
+  end
+
+  defp retry_agent_down(state, issue_id, running_entry, session_id, reason) do
+    Logger.warning("Agent task exited for issue_id=#{issue_id} session_id=#{session_id} reason=#{inspect(reason)}; scheduling retry")
+
+    # Notify tracker of failure with token metadata
+    update_tracker_failure(issue_id, running_entry, reason)
+
+    next_attempt = next_retry_attempt_from_running(running_entry)
+
+    schedule_issue_retry(state, issue_id, next_attempt, %{
+      identifier: running_entry.identifier,
+      error: "agent exited: #{inspect(reason)}",
+      worker_host: Map.get(running_entry, :worker_host),
+      workspace_path: Map.get(running_entry, :workspace_path)
+    })
+  end
+
+  # ── Planner/sub-task handlers ──
+
+  defp is_sub_task?(running_entry) when is_map(running_entry) do
+    case Map.get(running_entry, :issue) do
+      %Issue{parent_id: parent_id} when is_binary(parent_id) -> true
+      _ -> false
+    end
+  end
+
+  defp is_sub_task?(_), do: false
+
+  defp handle_normal_agent_completion(state, issue_id, running_entry, session_id) do
     if input_required_blocker?(running_entry) do
       block_input_required_agent_down(state, issue_id, running_entry, session_id, :normal)
     else
@@ -229,36 +308,172 @@ defmodule SymphonyElixir.Orchestrator do
     end
   end
 
-  defp handle_agent_down(reason, state, issue_id, running_entry, session_id) do
-    if input_required_blocker?(running_entry) do
-      block_input_required_agent_down(state, issue_id, running_entry, session_id, reason)
+  defp handle_planner_completion(state, issue_id, running_entry, session_id) do
+    Logger.info("Planner agent completed for issue_id=#{issue_id} session_id=#{session_id}")
+
+    workspace_path = Map.get(running_entry, :workspace_path)
+    parent_entry = Map.get(state.parents, issue_id)
+
+    state =
+      state
+      |> complete_issue(issue_id)
+      |> release_issue_claim(issue_id)
+
+    if workspace_path && parent_entry do
+      case TaskDecomposer.read_decomposition(workspace_path) do
+        {:ok, []} ->
+          Logger.info("Planner decided issue is not decomposable; falling back to simple dispatch: #{issue_context(parent_entry.issue)}")
+          parents = Map.delete(state.parents, issue_id)
+          cleanup_issue_workspace(parent_entry.issue.identifier, Map.get(running_entry, :worker_host))
+          %{state | parents: parents}
+
+        {:ok, sub_task_defs} ->
+          case TaskDecomposer.create_sub_tasks(parent_entry.issue, sub_task_defs) do
+            {:ok, child_issues} ->
+              child_ids = Enum.map(child_issues, & &1.id)
+
+              Logger.info("Planner created #{length(child_ids)} sub-tasks for parent=#{issue_id}")
+
+              updated_parent_entry = %{
+                parent_entry
+                | child_ids: MapSet.new(child_ids),
+                  phase: :executing,
+                  workspace_path: workspace_path
+              }
+
+              %{
+                state
+                | parents: Map.put(state.parents, issue_id, updated_parent_entry),
+                  claimed: Enum.reduce(child_ids, state.claimed, &MapSet.put(&2, &1))
+              }
+
+            {:error, reason} ->
+              Logger.warning("Failed to create sub-tasks for parent=#{issue_id}: #{inspect(reason)}; falling back to simple dispatch")
+
+              parents = Map.delete(state.parents, issue_id)
+              cleanup_issue_workspace(parent_entry.issue.identifier, Map.get(running_entry, :worker_host))
+              %{state | parents: parents}
+          end
+
+        {:error, reason} ->
+          Logger.warning("Failed to read decomposition for parent=#{issue_id}: #{inspect(reason)}; falling back to simple dispatch")
+
+          parents = Map.delete(state.parents, issue_id)
+          cleanup_issue_workspace(parent_entry.issue.identifier, Map.get(running_entry, :worker_host))
+          %{state | parents: parents}
+      end
     else
-      retry_agent_down(state, issue_id, running_entry, session_id, reason)
+      Logger.warning("No workspace path for planner parent=#{issue_id}; cleaning up")
+      parents = Map.delete(state.parents, issue_id)
+      %{state | parents: parents}
     end
   end
 
-  defp block_input_required_agent_down(state, issue_id, running_entry, session_id, reason) do
-    error = blocker_error(running_entry, "agent exited: #{inspect(reason)}")
+  defp handle_planner_failure(state, issue_id, _running_entry, _session_id, reason) do
+    Logger.warning("Planner agent failed for issue_id=#{issue_id} reason=#{inspect(reason)}")
 
-    Logger.warning("Agent task blocked for issue_id=#{issue_id} issue_identifier=#{running_entry.identifier} session_id=#{session_id}: #{error}")
+    # Remove from parents and fall through — issue stays in tracker, will be re-discovered
+    parents = Map.delete(state.parents, issue_id)
 
-    block_issue_from_entry(state, issue_id, running_entry, error)
+    state
+    |> complete_issue(issue_id)
+    |> release_issue_claim(issue_id)
+    |> then(&%{&1 | parents: parents})
   end
 
-  defp retry_agent_down(state, issue_id, running_entry, session_id, reason) do
-    Logger.warning("Agent task exited for issue_id=#{issue_id} session_id=#{session_id} reason=#{inspect(reason)}; scheduling retry")
+  defp handle_sub_task_completion(:normal, state, issue_id, running_entry, session_id) do
+    Logger.info("Sub-task completed for issue_id=#{issue_id} session_id=#{session_id}")
 
-    # Notify tracker of failure with token metadata
-    update_tracker_failure(issue_id, running_entry, reason)
+    _workspace_path = Map.get(running_entry, :workspace_path)
+    identifier = Map.get(running_entry, :identifier, issue_id)
 
-    next_attempt = next_retry_attempt_from_running(running_entry)
+    # Mark sub-task as resolved in tracker
+    Tracker.update_issue_state(issue_id, "Resolved")
 
-    schedule_issue_retry(state, issue_id, next_attempt, %{
-      identifier: running_entry.identifier,
-      error: "agent exited: #{inspect(reason)}",
-      worker_host: Map.get(running_entry, :worker_host),
-      workspace_path: Map.get(running_entry, :workspace_path)
-    })
+    # Write token metadata
+    update_tracker_completion_metadata(issue_id, running_entry, nil)
+
+    cleanup_issue_workspace(identifier, Map.get(running_entry, :worker_host))
+
+    state =
+      state
+      |> complete_issue(issue_id)
+      |> release_issue_claim(issue_id)
+
+    # Check if all siblings are complete
+    check_parent_completion(state, running_entry)
+  end
+
+  defp handle_sub_task_completion(reason, state, issue_id, running_entry, session_id) do
+    Logger.warning("Sub-task failed for issue_id=#{issue_id} session_id=#{session_id} reason=#{inspect(reason)}")
+
+    if input_required_blocker?(running_entry) do
+      block_input_required_agent_down(state, issue_id, running_entry, session_id, reason)
+    else
+      update_tracker_failure(issue_id, running_entry, reason)
+      next_attempt = next_retry_attempt_from_running(running_entry)
+
+      state =
+        schedule_issue_retry(state, issue_id, next_attempt, %{
+          identifier: running_entry.identifier,
+          error: "sub-task agent exited: #{inspect(reason)}",
+          worker_host: Map.get(running_entry, :worker_host),
+          workspace_path: Map.get(running_entry, :workspace_path)
+        })
+
+      # Still check if other siblings completed while this one retries
+      check_parent_completion(state, running_entry)
+    end
+  end
+
+  defp check_parent_completion(state, running_entry) do
+    case Map.get(running_entry, :issue) do
+      %Issue{parent_id: parent_id} when is_binary(parent_id) ->
+        case Map.get(state.parents, parent_id) do
+          %{child_ids: child_ids} = parent_entry when is_map(child_ids) ->
+            if TaskDecomposer.all_children_terminal?(MapSet.to_list(child_ids), state.running) do
+              Logger.info("All sub-tasks complete for parent=#{parent_id}; dispatching merge")
+              dispatch_merge(state, parent_id, parent_entry)
+            else
+              state
+            end
+
+          _ ->
+            state
+        end
+
+      _ ->
+        state
+    end
+  end
+
+  defp handle_merge_completion(state, issue_id, running_entry, session_id) do
+    Logger.info("Merge agent completed for parent=#{issue_id} session_id=#{session_id}")
+
+    identifier = Map.get(running_entry, :identifier, issue_id)
+
+    # Mark parent as resolved
+    Tracker.update_issue_state(issue_id, "Resolved")
+
+    update_tracker_completion_metadata(issue_id, running_entry, nil)
+    send_completion_webhook(running_entry, nil)
+
+    # Cleanup
+    cleanup_issue_workspace(identifier, Map.get(running_entry, :worker_host))
+
+    state
+    |> complete_issue(issue_id)
+    |> release_issue_claim(issue_id)
+    |> then(&%{&1 | parents: Map.delete(&1.parents, issue_id)})
+  end
+
+  defp handle_merge_failure(state, issue_id, _running_entry, _session_id, reason) do
+    Logger.warning("Merge agent failed for parent=#{issue_id} reason=#{inspect(reason)}")
+
+    # Keep parent entry in :merging phase — will be retried on next poll
+    state
+    |> release_issue_claim(issue_id)
+    |> then(&%{&1 | parents: Map.update(&1.parents, issue_id, %{}, fn pe -> %{pe | phase: :merging, planner_pid: nil, planner_ref: nil} end)})
   end
 
   defp maybe_dispatch(%State{} = state) do
@@ -266,6 +481,7 @@ defmodule SymphonyElixir.Orchestrator do
       state
       |> reconcile_running_issues()
       |> reconcile_blocked_issues()
+      |> reconcile_parent_issues()
 
     with :ok <- Config.validate!(),
          {:ok, issues} <- Tracker.fetch_candidate_issues(),
@@ -355,6 +571,27 @@ defmodule SymphonyElixir.Orchestrator do
       end
     end
   end
+
+  defp reconcile_parent_issues(%State{parents: parents} = state) do
+    if map_size(parents) == 0 do
+      state
+    else
+      Enum.reduce(parents, state, fn {parent_id, parent_entry}, state_acc ->
+        reconcile_parent_entry(state_acc, parent_id, parent_entry)
+      end)
+    end
+  end
+
+  defp reconcile_parent_entry(state, parent_id, %{phase: :merging, planner_pid: nil} = parent_entry) do
+    # Merge agent crashed/exited and wasn't restarted yet — check if we can retry
+    if available_slots(state) > 0 and not Map.has_key?(state.running, parent_id) do
+      dispatch_merge(state, parent_id, parent_entry)
+    else
+      state
+    end
+  end
+
+  defp reconcile_parent_entry(state, _parent_id, _parent_entry), do: state
 
   @doc false
   @spec reconcile_issue_states_for_test([Issue.t()], term()) :: term()
@@ -761,12 +998,19 @@ defmodule SymphonyElixir.Orchestrator do
   defp choose_issues(issues, state) do
     active_states = active_state_set()
     terminal_states = terminal_state_set()
+    decomposition_config = Config.settings!().decomposition
 
     issues
     |> sort_issues_for_dispatch()
     |> Enum.reduce(state, fn issue, state_acc ->
       if should_dispatch_issue?(issue, state_acc, active_states, terminal_states) do
-        dispatch_issue(state_acc, issue)
+        case ComplexityClassifier.classify(issue, decomposition_config) do
+          :complex when decomposition_config.enabled ->
+            dispatch_planner(state_acc, issue)
+
+          _ ->
+            dispatch_issue(state_acc, issue)
+        end
       else
         state_acc
       end
@@ -795,7 +1039,7 @@ defmodule SymphonyElixir.Orchestrator do
 
   defp should_dispatch_issue?(
          %Issue{} = issue,
-         %State{running: running, claimed: claimed, blocked: blocked} = state,
+         %State{running: running, claimed: claimed, blocked: blocked, parents: parents} = state,
          active_states,
          terminal_states
        ) do
@@ -804,9 +1048,11 @@ defmodule SymphonyElixir.Orchestrator do
       !MapSet.member?(claimed, issue.id) and
       !Map.has_key?(running, issue.id) and
       !Map.has_key?(blocked, issue.id) and
+      !Map.has_key?(parents, issue.id) and
       available_slots(state) > 0 and
       state_slots_available?(issue, running) and
-      worker_slots_available?(state)
+      worker_slots_available?(state) and
+      sub_task_slots_available?(state, issue)
   end
 
   defp should_dispatch_issue?(_issue, _state, _active_states, _terminal_states), do: false
@@ -932,6 +1178,196 @@ defmodule SymphonyElixir.Orchestrator do
         spawn_issue_on_worker_host(state, issue, attempt, recipient, worker_host)
     end
   end
+
+  # ── Planner dispatch (task decomposition) ──
+
+  defp dispatch_planner(%State{} = state, %Issue{} = issue) do
+    case revalidate_issue_for_dispatch(issue, &Tracker.fetch_issue_states_by_ids/1, terminal_state_set()) do
+      {:ok, %Issue{} = refreshed_issue} ->
+        do_dispatch_planner(state, refreshed_issue)
+
+      {:skip, reason} ->
+        Logger.info("Skipping planner dispatch: #{issue_context(issue)} reason=#{inspect(reason)}")
+        state
+
+      {:error, reason} ->
+        Logger.warning("Skipping planner dispatch; refresh failed for #{issue_context(issue)}: #{inspect(reason)}")
+        state
+    end
+  end
+
+  defp do_dispatch_planner(%State{} = state, %Issue{} = issue) do
+    decomposition_config = Config.settings!().decomposition
+    recipient = self()
+
+    case select_worker_host(state, nil) do
+      :no_worker_capacity ->
+        Logger.debug("No worker slots for planner: #{issue_context(issue)}")
+        # Fallback to simple dispatch
+        dispatch_issue(state, issue)
+
+      worker_host ->
+        planner_prompt = PlannerPrompt.build_planner_prompt(issue, decomposition_config)
+
+        case Task.Supervisor.start_child(SymphonyElixir.TaskSupervisor, fn ->
+               AgentRunner.run(issue, recipient,
+                 attempt: nil,
+                 worker_host: worker_host,
+                 max_turns: decomposition_config.planner_max_turns,
+                 prompt_override: planner_prompt
+               )
+             end) do
+          {:ok, pid} ->
+            ref = Process.monitor(pid)
+
+            Logger.info("Dispatching planner for: #{issue_context(issue)} pid=#{inspect(pid)} worker_host=#{worker_host || "local"}")
+
+            Tracker.update_issue_state(issue.id, "In Progress")
+
+            parent_entry = %{
+              issue: issue,
+              child_ids: MapSet.new(),
+              phase: :planning,
+              planner_ref: ref,
+              planner_pid: pid,
+              workspace_path: nil
+            }
+
+            running =
+              Map.put(state.running, issue.id, %{
+                pid: pid,
+                ref: ref,
+                identifier: issue.identifier,
+                issue: %{issue | complexity: :complex},
+                worker_host: worker_host,
+                workspace_path: nil,
+                session_id: nil,
+                last_codex_message: nil,
+                last_codex_timestamp: nil,
+                last_codex_event: nil,
+                codex_app_server_pid: nil,
+                codex_input_tokens: 0,
+                codex_output_tokens: 0,
+                codex_total_tokens: 0,
+                codex_last_reported_input_tokens: 0,
+                codex_last_reported_output_tokens: 0,
+                codex_last_reported_total_tokens: 0,
+                turn_count: 0,
+                retry_attempt: 0,
+                started_at: DateTime.utc_now()
+              })
+
+            %{
+              state
+              | running: running,
+                claimed: MapSet.put(state.claimed, issue.id),
+                parents: Map.put(state.parents, issue.id, parent_entry)
+            }
+
+          {:error, reason} ->
+            Logger.error("Unable to spawn planner for #{issue_context(issue)}: #{inspect(reason)}")
+            # Fallback to simple dispatch
+            dispatch_issue(state, issue)
+        end
+    end
+  end
+
+  # ── Merge dispatch ──
+
+  defp dispatch_merge(%State{} = state, parent_id, parent_entry) do
+    decomposition_config = Config.settings!().decomposition
+    recipient = self()
+
+    child_issues = fetch_child_issues(MapSet.to_list(parent_entry.child_ids))
+
+    merge_prompt = PlannerPrompt.build_merge_prompt(parent_entry.issue, child_issues)
+
+    # Create a synthetic issue for the merge agent
+    merge_issue = %{parent_entry.issue | title: "[Merge] #{parent_entry.issue.title}"}
+
+    case select_worker_host(state, nil) do
+      :no_worker_capacity ->
+        Logger.warning("No worker slots for merge: parent=#{parent_id}")
+        # Will be retried on next poll cycle
+        state
+
+      worker_host ->
+        case Task.Supervisor.start_child(SymphonyElixir.TaskSupervisor, fn ->
+               AgentRunner.run(merge_issue, recipient,
+                 attempt: nil,
+                 worker_host: worker_host,
+                 max_turns: decomposition_config.merge_max_turns,
+                 prompt_override: merge_prompt
+               )
+             end) do
+          {:ok, pid} ->
+            ref = Process.monitor(pid)
+
+            Logger.info("Dispatching merge for parent=#{parent_id} pid=#{inspect(pid)}")
+
+            updated_parent_entry = %{parent_entry | phase: :merging, planner_pid: pid, planner_ref: ref}
+
+            running =
+              Map.put(state.running, parent_id, %{
+                pid: pid,
+                ref: ref,
+                identifier: parent_entry.issue.identifier,
+                issue: parent_entry.issue,
+                worker_host: worker_host,
+                workspace_path: Map.get(parent_entry, :workspace_path),
+                session_id: nil,
+                last_codex_message: nil,
+                last_codex_timestamp: nil,
+                last_codex_event: nil,
+                codex_app_server_pid: nil,
+                codex_input_tokens: 0,
+                codex_output_tokens: 0,
+                codex_total_tokens: 0,
+                codex_last_reported_input_tokens: 0,
+                codex_last_reported_output_tokens: 0,
+                codex_last_reported_total_tokens: 0,
+                turn_count: 0,
+                retry_attempt: 0,
+                started_at: DateTime.utc_now()
+              })
+
+            %{
+              state
+              | running: running,
+                parents: Map.put(state.parents, parent_id, updated_parent_entry)
+            }
+
+          {:error, reason} ->
+            Logger.error("Unable to spawn merge for parent=#{parent_id}: #{inspect(reason)}")
+            state
+        end
+    end
+  end
+
+  defp fetch_child_issues(child_ids) when is_list(child_ids) do
+    case Tracker.fetch_issue_states_by_ids(child_ids) do
+      {:ok, issues} -> issues
+      {:error, _} -> []
+    end
+  end
+
+  defp sub_task_slots_available?(%State{running: running}, %Issue{parent_id: nil}) do
+    # Parent/root issues don't count against sub-task quota
+    config = Config.settings!().decomposition
+    current_sub_task_count = count_running_sub_tasks(running)
+    current_sub_task_count < config.max_sub_tasks_total
+  end
+
+  defp sub_task_slots_available?(_state, _issue), do: true
+
+  defp count_running_sub_tasks(running) when is_map(running) do
+    Enum.count(running, fn
+      {_id, %{issue: %Issue{parent_id: parent_id}}} when is_binary(parent_id) -> true
+      _ -> false
+    end)
+  end
+
+  defp count_running_sub_tasks(_), do: 0
 
   defp spawn_issue_on_worker_host(%State{} = state, issue, attempt, recipient, worker_host) do
     case Task.Supervisor.start_child(SymphonyElixir.TaskSupervisor, fn ->
@@ -1416,11 +1852,25 @@ defmodule SymphonyElixir.Orchestrator do
         }
       end)
 
+    parents =
+      state.parents
+      |> Enum.map(fn {parent_id, parent_entry} ->
+        %{
+          issue_id: parent_id,
+          identifier: Map.get(parent_entry.issue, :identifier),
+          phase: parent_entry.phase,
+          child_ids: MapSet.to_list(parent_entry.child_ids),
+          child_count: MapSet.size(parent_entry.child_ids),
+          workspace_path: Map.get(parent_entry, :workspace_path)
+        }
+      end)
+
     {:reply,
      %{
        running: running,
        retrying: retrying,
        blocked: blocked,
+       parents: parents,
        codex_totals: state.codex_totals,
        rate_limits: Map.get(state, :codex_rate_limits),
        polling: %{
@@ -2003,7 +2453,9 @@ defmodule SymphonyElixir.Orchestrator do
     }
 
     case Webhook.send_completion_notification(notification) do
-      :ok -> :ok
+      :ok ->
+        :ok
+
       {:error, reason} ->
         Logger.warning("Feishu webhook notification failed: #{inspect(reason)}")
     end

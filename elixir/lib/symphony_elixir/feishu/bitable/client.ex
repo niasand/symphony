@@ -48,6 +48,21 @@ defmodule SymphonyElixir.Feishu.Bitable.Client do
     end
   end
 
+  @spec create_record(String.t(), String.t(), map()) ::
+          {:ok, map()} | {:error, term()}
+  def create_record(app_token, table_id, fields) do
+    with {:ok, token} <- Auth.tenant_access_token(),
+         {:ok, record} <-
+           request(
+             :post,
+             "#{@base_url}/#{app_token}/tables/#{table_id}/records",
+             token,
+             json: %{"fields" => fields}
+           ) do
+      expect_map(record)
+    end
+  end
+
   defp list_records_request(app_token, table_id, token, filter, page_size) do
     if filter do
       request(

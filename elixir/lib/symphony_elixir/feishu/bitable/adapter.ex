@@ -97,6 +97,20 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
     end
   end
 
+  @impl true
+  def create_issue(attrs) when is_map(attrs) do
+    fields = build_create_fields(attrs)
+
+    case Client.create_record(bitable_app_token(), bitable_table_id(), fields) do
+      {:ok, record} ->
+        {:ok, Issue.from_record(record)}
+
+      {:error, reason} ->
+        Logger.warning("Failed to create Bitable record: #{inspect(reason)}")
+        {:error, reason}
+    end
+  end
+
   # Update record with full metadata (tokens, error, etc.)
   @spec update_record_with_metadata(String.t(), map()) :: :ok | {:error, term()}
   def update_record_with_metadata(record_id, metadata) when is_binary(record_id) and is_map(metadata) do
@@ -217,4 +231,20 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
   end
 
   defp config_module, do: SymphonyElixir.Config
+
+  defp build_create_fields(attrs) do
+    %{}
+    |> maybe_put_field(attrs, :title, "Task")
+    |> maybe_put_field(attrs, :description, "Description")
+    |> maybe_put_field(attrs, :state, "Status")
+    |> maybe_put_field(attrs, :parent_id, "Parent Issue")
+    |> maybe_put_field(attrs, :priority, "Priority")
+  end
+
+  defp maybe_put_field(fields, attrs, source_key, bitable_field) do
+    case Map.get(attrs, source_key) do
+      nil -> fields
+      value -> Map.put(fields, bitable_field, value)
+    end
+  end
 end

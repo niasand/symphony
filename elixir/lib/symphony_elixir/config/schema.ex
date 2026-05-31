@@ -330,6 +330,8 @@ defmodule SymphonyElixir.Config.Schema do
 
     @primary_key false
 
+    @type t :: %__MODULE__{}
+
     @default_complexity_keywords ~w(epic complex multi-part refactor migration)
 
     embedded_schema do
@@ -473,6 +475,7 @@ defmodule SymphonyElixir.Config.Schema do
     |> cast_embed(:observability, with: &Observability.changeset/2)
     |> cast_embed(:server, with: &Server.changeset/2)
     |> cast_embed(:notifications, with: &Notifications.changeset/2)
+    |> cast_embed(:decomposition, with: &Decomposition.changeset/2)
   end
 
   defp finalize_settings(settings) do

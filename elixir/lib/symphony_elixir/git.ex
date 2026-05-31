@@ -31,12 +31,18 @@ defmodule SymphonyElixir.Git do
     case has_diverged_commits?(workspace_path, base, branch_name) do
       true ->
         args = [
-          "pr", "create",
-          "--title", title,
-          "--body", body,
-          "--head", branch_name,
-          "--base", base,
-          "--json", "url"
+          "pr",
+          "create",
+          "--title",
+          title,
+          "--body",
+          body,
+          "--head",
+          branch_name,
+          "--base",
+          base,
+          "--json",
+          "url"
         ]
 
         case System.cmd("gh", args, cd: workspace_path, stderr_to_stdout: true) do
@@ -65,13 +71,20 @@ defmodule SymphonyElixir.Git do
       :error ->
         # If we can't determine, try anyway
         Logger.warning("Could not determine commit status for #{issue_identifier}; attempting MR creation")
+
         args = [
-          "pr", "create",
-          "--title", title,
-          "--body", body,
-          "--head", branch_name,
-          "--base", base,
-          "--json", "url"
+          "pr",
+          "create",
+          "--title",
+          title,
+          "--body",
+          body,
+          "--head",
+          branch_name,
+          "--base",
+          base,
+          "--json",
+          "url"
         ]
 
         case System.cmd("gh", args, cd: workspace_path, stderr_to_stdout: true) do
@@ -87,10 +100,11 @@ defmodule SymphonyElixir.Git do
 
   @spec branch_name_for_issue(String.t()) :: String.t()
   def branch_name_for_issue(issue_identifier) when is_binary(issue_identifier) do
-    safe = issue_identifier
-           |> String.downcase()
-           |> String.replace(~r/[^a-z0-9._-]+/, "-", global: true)
-           |> String.trim("-")
+    safe =
+      issue_identifier
+      |> String.downcase()
+      |> String.replace(~r/[^a-z0-9._-]+/, "-", global: true)
+      |> String.trim("-")
 
     "symphony/#{safe}"
   end

@@ -21,6 +21,15 @@ claude:
   stallTimeoutMs: 300000
   skip_permissions: true
 
+decomposition:
+  enabled: false
+  complexityKeywords: ["epic", "complex", "multi-part", "refactor", "migration"]
+  descriptionLengthThreshold: 2000
+  maxSubTasks: 5
+  maxSubTasksTotal: 15
+  plannerMaxTurns: 3
+  mergeMaxTurns: 3
+
 workspace:
   root: /tmp/symphony_workspaces
 

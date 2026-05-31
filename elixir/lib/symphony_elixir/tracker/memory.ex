@@ -47,6 +47,14 @@ defmodule SymphonyElixir.Tracker.Memory do
     :ok
   end
 
+  @spec create_issue(map()) :: {:ok, Issue.t()} | {:error, term()}
+  def create_issue(attrs) when is_map(attrs) do
+    issue = struct!(Issue, Map.merge(default_issue_attrs(), attrs))
+    append_issue(issue)
+    send_event({:memory_tracker_created, issue.id, issue})
+    {:ok, issue}
+  end
+
   defp configured_issues do
     Application.get_env(:symphony_elixir, :memory_tracker_issues, [])
   end
@@ -69,4 +77,27 @@ defmodule SymphonyElixir.Tracker.Memory do
   end
 
   defp normalize_state(_state), do: ""
+
+  defp default_issue_attrs do
+    %{
+      id: generate_id(),
+      identifier: nil,
+      state: "Open",
+      assigned_to_worker: true,
+      labels: [],
+      blocked_by: [],
+      sub_task_ids: [],
+      created_at: DateTime.utc_now(),
+      updated_at: DateTime.utc_now()
+    }
+  end
+
+  defp generate_id do
+    :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+  end
+
+  defp append_issue(issue) do
+    current = Application.get_env(:symphony_elixir, :memory_tracker_issues, [])
+    Application.put_env(:symphony_elixir, :memory_tracker_issues, current ++ [issue])
+  end
 end

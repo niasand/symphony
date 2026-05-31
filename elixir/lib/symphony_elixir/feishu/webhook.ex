@@ -9,16 +9,16 @@ defmodule SymphonyElixir.Feishu.Webhook do
   require Logger
 
   @type notification :: %{
-    identifier: String.t(),
-    title: String.t(),
-    status: String.t(),
-    mr_url: String.t() | nil,
-    branch_name: String.t() | nil,
-    input_tokens: non_neg_integer(),
-    output_tokens: non_neg_integer(),
-    total_tokens: non_neg_integer(),
-    error: String.t() | nil
-  }
+          identifier: String.t(),
+          title: String.t(),
+          status: String.t(),
+          mr_url: String.t() | nil,
+          branch_name: String.t() | nil,
+          input_tokens: non_neg_integer(),
+          output_tokens: non_neg_integer(),
+          total_tokens: non_neg_integer(),
+          error: String.t() | nil
+        }
 
   @spec send_completion_notification(notification()) :: :ok | {:error, term()}
   def send_completion_notification(%{} = notification) do
