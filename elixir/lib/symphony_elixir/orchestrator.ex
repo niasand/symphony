@@ -1942,7 +1942,8 @@ defmodule SymphonyElixir.Orchestrator do
       output_tokens: output_tokens,
       total_tokens: total_tokens,
       retry_count: retry_count,
-      branch_name: branch_name
+      branch_name: branch_name,
+      mr_url: read_git_mr_url(workspace_path)
     }
 
     case Tracker.adapter() do
@@ -1978,7 +1979,8 @@ defmodule SymphonyElixir.Orchestrator do
       total_tokens: total_tokens,
       retry_count: retry_attempt,
       error: error_msg,
-      branch_name: branch_name
+      branch_name: branch_name,
+      mr_url: nil
     }
 
     case Tracker.adapter() do
@@ -2006,4 +2008,28 @@ defmodule SymphonyElixir.Orchestrator do
   end
 
   defp read_git_branch(_), do: nil
+
+  defp read_git_mr_url(nil), do: nil
+
+  defp read_git_mr_url(workspace_path) when is_binary(workspace_path) do
+    branch = read_git_branch(workspace_path)
+
+    if is_binary(branch) and branch != "" do
+      case System.cmd("gh", ["pr", "view", branch, "--json", "url", "-q", ".url"],
+             cd: workspace_path,
+             stderr_to_stdout: true
+           ) do
+        {url, 0} ->
+          url = String.trim(url)
+          if url != "", do: url, else: nil
+
+        _ ->
+          nil
+      end
+    else
+      nil
+    end
+  end
+
+  defp read_git_mr_url(_), do: nil
 end

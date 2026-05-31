@@ -100,7 +100,7 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
   # Update record with full metadata (tokens, error, etc.)
   @spec update_record_with_metadata(String.t(), map()) :: :ok | {:error, term()}
   def update_record_with_metadata(record_id, metadata) when is_binary(record_id) and is_map(metadata) do
-    fields = metadata_fields(metadata)
+    fields = metadata_fields(metadata, record_id)
 
     if map_size(fields) > 0 do
       update_metadata_fields(record_id, metadata, fields)
@@ -123,7 +123,7 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
     end
   end
 
-  defp metadata_fields(metadata) do
+  defp metadata_fields(metadata, record_id) do
     %{}
     |> maybe_put_metadata_field(metadata, :state, "Status")
     |> maybe_put_metadata_field(metadata, :input_tokens, "Token Input")
@@ -133,6 +133,7 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
     |> maybe_put_metadata_field(metadata, :branch_name, "Branch")
     |> maybe_put_metadata_field(metadata, :retry_count, "Retries")
     |> maybe_put_completed_at(metadata)
+    |> maybe_put_mr_comment(metadata, record_id)
   end
 
   defp maybe_put_metadata_field(fields, metadata, key, bitable_field) do
@@ -148,6 +149,23 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
   end
 
   defp maybe_put_completed_at(fields, _metadata), do: fields
+
+  defp maybe_put_mr_comment(fields, %{mr_url: mr_url}, record_id)
+       when is_binary(mr_url) and mr_url != "" and is_binary(record_id) do
+    existing = fetch_comments(record_id)
+    separator = if existing && existing != "", do: "\n\n", else: ""
+    comment = "#{existing}#{separator}[#{format_timestamp()}] MR created: #{mr_url}"
+    Map.put(fields, "Comments", comment)
+  end
+
+  defp maybe_put_mr_comment(fields, _metadata, _record_id), do: fields
+
+  defp fetch_comments(record_id) do
+    case Client.get_record(bitable_app_token(), bitable_table_id(), record_id) do
+      {:ok, data} -> extract_text_field(data, "Comments")
+      _ -> ""
+    end
+  end
 
   defp update_metadata_fields(record_id, metadata, fields) do
     Logger.debug("Bitable metadata update for #{record_id}: #{inspect(Map.keys(fields))}")
