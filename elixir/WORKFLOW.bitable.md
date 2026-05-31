@@ -3,6 +3,7 @@ tracker:
   kind: bitable
   bitable_app_token: "Ir7pbRChgaYRYns4hmWcNfHJnKe"
   bitable_table_id: "tblHW47GcJNC0SqE"
+  bitable_project_label: "symphony"
   active_states: ["Open", "In Progress"]
   terminal_states: ["Resolved", "Done", "Failed", "Cancelled"]
 

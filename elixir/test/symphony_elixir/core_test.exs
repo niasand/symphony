@@ -76,6 +76,9 @@ defmodule SymphonyElixir.CoreTest do
     assert {:error, {:invalid_workflow_config, message}} = Config.validate!()
     assert message =~ "codex.thread_sandbox"
 
+    write_workflow_file!(Workflow.workflow_file_path(), tracker_bitable_project_label: nil)
+    assert {:error, :missing_bitable_project_label} = Config.validate!()
+
     write_workflow_file!(Workflow.workflow_file_path(), tracker_kind: "123")
     assert {:error, {:unsupported_tracker_kind, "123"}} = Config.validate!()
   end
@@ -92,6 +95,7 @@ defmodule SymphonyElixir.CoreTest do
     assert is_map(tracker)
     assert Map.get(tracker, "kind") == "bitable"
     assert is_binary(Map.get(tracker, "bitable_app_token"))
+    assert Map.get(tracker, "bitable_project_label") == "symphony"
     assert is_list(Map.get(tracker, "active_states"))
     assert is_list(Map.get(tracker, "terminal_states"))
 

@@ -62,6 +62,7 @@ tracker:
   kind: bitable                        # or "memory" for local dev
   bitable_app_token: "..."             # Feishu Bitable app token
   bitable_table_id: "..."              # Bitable table ID
+  bitable_project_label: "symphony"    # Labels value used to isolate this project
   active_states: ["Open", "In Progress"]
   terminal_states: ["Resolved", "Done", "Failed", "Cancelled"]
 
@@ -97,6 +98,7 @@ Secrets can be set via environment variables:
 ```bash
 export FEISHU_BITABLE_APP_TOKEN="..."    # overrides bitable_app_token in WORKFLOW.md
 export FEISHU_BITABLE_TABLE_ID="..."     # overrides bitable_table_id in WORKFLOW.md
+export FEISHU_BITABLE_PROJECT_LABEL="..." # overrides bitable_project_label in WORKFLOW.md
 ```
 
 ### Start

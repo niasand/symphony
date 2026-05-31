@@ -2,9 +2,9 @@
 #
 # 流程：
 # 1. 用 Bitable Adapter 查询"待处理"任务
-# 2. 更新状态为"进行中" + 回写元数据
+# 2. 更新状态为"进行中" + 回写评论
 # 3. 用 Claude CLI 执行实际任务
-# 4. 更新状态为"已完成" + 回写 token 用量
+# 4. 更新状态为"已完成" + 回写完成时间
 #
 # 运行：mix run scripts/e2e_bitable_test.exs
 
@@ -25,7 +25,7 @@ case Adapter.fetch_issues_by_states(["Open"]) do
   {:ok, issues} ->
     IO.puts("Found #{length(issues)} candidate issues:")
     for issue <- issues do
-      IO.puts("  - #{issue.identifier}: #{issue.title} (state=#{issue.state}, priority=#{inspect(issue.priority)})")
+      IO.puts("  - #{issue.identifier}: #{issue.title} (state=#{issue.state}, labels=#{inspect(issue.labels)})")
     end
 
     target = Enum.find(issues, &(&1.id == record_id))
@@ -84,7 +84,7 @@ case Adapter.fetch_issues_by_states(["Open"]) do
           success = exit_code == 0 || String.contains?(output, "DONE")
 
           IO.puts("  exit_code: #{exit_code}")
-          IO.puts("  tokens: input=#{input_tokens} output=#{output_tokens} total=#{total_tokens}")
+          IO.puts("  tokens observed locally: input=#{input_tokens} output=#{output_tokens} total=#{total_tokens}")
           IO.puts("  cost: $#{cost}")
           IO.puts("  duration: #{duration}ms")
           IO.puts("  success: #{success}")
@@ -101,17 +101,12 @@ case Adapter.fetch_issues_by_states(["Open"]) do
           IO.puts("\n=== Step 4: Mark task → Resolved + metadata ===")
 
           metadata = %{
-            state: "Resolved",
-            input_tokens: input_tokens,
-            output_tokens: output_tokens,
-            total_tokens: total_tokens,
-            retry_count: 0,
-            branch_name: "sym-e2e-001"
+            state: "Resolved"
           }
 
           case Adapter.update_record_with_metadata(record_id, metadata) do
             :ok ->
-              IO.puts("✓ Task marked as 已完成 with full metadata")
+              IO.puts("✓ Task marked as 已完成")
             {:error, reason} ->
               IO.puts("✗ Failed to update: #{inspect(reason)}")
           end

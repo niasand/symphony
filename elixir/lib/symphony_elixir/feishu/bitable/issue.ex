@@ -9,12 +9,12 @@ defmodule SymphonyElixir.Feishu.Bitable.Issue do
   def from_record(%{"record_id" => record_id, "fields" => fields}) do
     %Issue{
       id: record_id,
-      identifier: select_value(fields["Issue ID"]) || record_id,
+      identifier: select_value(fields["uuid"]) || record_id,
       title: select_value(fields["Task"]) || "Untitled",
       description: fields["Description"],
-      priority: parse_priority(select_value(fields["Priority"])),
+      priority: nil,
       state: select_value(fields["Status"]) || "Open",
-      branch_name: select_value(fields["Branch"]),
+      branch_name: nil,
       url: nil,
       labels: parse_labels(fields["Labels"]),
       blocked_by: [],
@@ -32,12 +32,6 @@ defmodule SymphonyElixir.Feishu.Bitable.Issue do
   defp select_value(value) when is_binary(value), do: value
   defp select_value([value | _]) when is_binary(value), do: value
   defp select_value(_), do: nil
-
-  defp parse_priority("P0"), do: 1
-  defp parse_priority("P1"), do: 2
-  defp parse_priority("P2"), do: 3
-  defp parse_priority("P3"), do: 4
-  defp parse_priority(_), do: nil
 
   defp parse_labels([_ | _] = labels) when is_list(labels) do
     Enum.map(labels, &String.downcase/1)

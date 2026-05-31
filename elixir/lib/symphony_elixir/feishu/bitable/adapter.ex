@@ -22,23 +22,18 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
 
   @impl true
   def fetch_issues_by_states(state_names) when is_list(state_names) do
-    conditions =
+    state_names =
       state_names
       |> Enum.filter(&is_binary/1)
-      |> Enum.map(fn state ->
-        %{"field_name" => "Status", "operator" => "is", "value" => [state]}
-      end)
+      |> Enum.map(&String.trim/1)
+      |> Enum.reject(&(&1 == ""))
 
-    case conditions do
+    case state_names do
       [] ->
         {:ok, []}
 
       _ ->
-        filter = %{"conjunction" => "or", "conditions" => conditions}
-
-        with {:ok, records} <- Client.list_records(bitable_app_token(), bitable_table_id(), filter: filter) do
-          {:ok, Enum.map(records, &Issue.from_record/1)}
-        end
+        fetch_records_for_states(state_names)
     end
   end
 
@@ -75,7 +70,6 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
       case state_name do
         "In Progress" ->
           Map.merge(update_fields, %{
-            "Agent" => agent_label(),
             "Comments" => "[#{format_timestamp()}] Claimed by #{agent_label()}"
           })
 
@@ -111,7 +105,7 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
     end
   end
 
-  # Update record with full metadata (tokens, error, etc.)
+  # Update record with status metadata that still exists in the Bitable schema.
   @spec update_record_with_metadata(String.t(), map()) :: :ok | {:error, term()}
   def update_record_with_metadata(record_id, metadata) when is_binary(record_id) and is_map(metadata) do
     fields = metadata_fields(metadata, record_id)
@@ -137,15 +131,27 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
     end
   end
 
+  defp fetch_records_for_states(state_names) do
+    Enum.reduce_while(state_names, {:ok, []}, fn state, {:ok, acc} ->
+      filter = %{
+        "conjunction" => "and",
+        "conditions" => [
+          %{"field_name" => "Status", "operator" => "is", "value" => [state]},
+          %{"field_name" => "Labels", "operator" => "is", "value" => [bitable_project_label()]}
+        ]
+      }
+
+      case Client.list_records(bitable_app_token(), bitable_table_id(), filter: filter) do
+        {:ok, records} -> {:cont, {:ok, acc ++ Enum.map(records, &Issue.from_record/1)}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
   defp metadata_fields(metadata, record_id) do
     %{}
     |> maybe_put_metadata_field(metadata, :state, "Status")
-    |> maybe_put_metadata_field(metadata, :input_tokens, "Token Input")
-    |> maybe_put_metadata_field(metadata, :output_tokens, "Token Output")
-    |> maybe_put_metadata_field(metadata, :total_tokens, "Token Total")
     |> maybe_put_metadata_field(metadata, :error, "Error")
-    |> maybe_put_metadata_field(metadata, :branch_name, "Branch")
-    |> maybe_put_metadata_field(metadata, :retry_count, "Retries")
     |> maybe_put_completed_at(metadata)
     |> maybe_put_mr_comment(metadata, record_id)
   end
@@ -208,6 +214,13 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
       ""
   end
 
+  defp bitable_project_label do
+    (config_module().settings!().tracker.bitable_project_label ||
+       System.get_env("FEISHU_BITABLE_PROJECT_LABEL") ||
+       "")
+    |> String.trim()
+  end
+
   defp agent_label do
     config_module().settings!().agent.kind |> String.capitalize()
   end
@@ -234,20 +247,23 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
 
   defp build_create_fields(attrs) do
     %{}
+    |> Map.put("uuid", issue_uuid(attrs))
     |> maybe_put_field(attrs, :title, "Task")
     |> maybe_put_field(attrs, :description, "Description")
     |> maybe_put_field(attrs, :state, "Status")
     |> maybe_put_field(attrs, :parent_id, "Parent Issue")
-    |> maybe_put_field(attrs, :priority, "Priority")
-    |> maybe_put_labels(attrs)
+    |> Map.put("Labels", bitable_project_label())
   end
 
-  defp maybe_put_labels(fields, %{labels: [_ | _] = labels}) do
-    # Bitable select field accepts a single string value
-    Map.put(fields, "Labels", List.first(labels))
+  defp issue_uuid(%{uuid: uuid}) when is_binary(uuid) and uuid != "" do
+    uuid
   end
 
-  defp maybe_put_labels(fields, _attrs), do: fields
+  defp issue_uuid(%{"uuid" => uuid}) when is_binary(uuid) and uuid != "" do
+    uuid
+  end
+
+  defp issue_uuid(_attrs), do: Ecto.UUID.generate()
 
   defp maybe_put_field(fields, attrs, source_key, bitable_field) do
     case Map.get(attrs, source_key) do

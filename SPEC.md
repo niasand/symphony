@@ -275,7 +275,8 @@ Fields:
 ### 4.2 Stable Identifiers and Normalization Rules
 
 - `Issue ID`
-  - Use for tracker lookups and internal map keys.
+  - Use for normalized tracker lookups and internal map keys. For Bitable-backed trackers this is the
+    platform `record_id`; the table-level stable human field is `uuid`.
 - `Issue Identifier`
   - Use for human-readable logs and workspace naming.
 - `Workspace Key`
@@ -1173,6 +1174,18 @@ Important:
 A non-Linear implementation MAY change transport details, but the normalized outputs MUST match the
 domain model in Section 4.
 
+### 11.2.1 Query Semantics (Feishu Bitable)
+
+Bitable-specific requirements for `tracker.kind == "bitable"`:
+
+- `tracker.bitable_app_token` identifies the Base.
+- `tracker.bitable_table_id` identifies the task table.
+- `tracker.bitable_project_label` maps to the task table `Labels` select field.
+- Candidate issue queries MUST filter by both configured active states and `Labels ==
+  tracker.bitable_project_label`.
+- Bitable row identity uses `record_id`; the table field `uuid` is the stable display identifier.
+- The `Labels` field is reserved for project isolation, not task type.
+
 ### 11.3 Normalization Rules
 
 Candidate issue normalization SHOULD produce fields listed in Section 4.1.1.
@@ -1191,6 +1204,7 @@ RECOMMENDED error categories:
 - `unsupported_tracker_kind`
 - `missing_tracker_api_key`
 - `missing_tracker_project_slug`
+- `missing_bitable_project_label`
 - `linear_api_request` (transport failures)
 - `linear_api_status` (non-200 HTTP)
 - `linear_graphql_errors`
@@ -1983,7 +1997,8 @@ Unless otherwise noted, Sections 17.1 through 17.7 are `Core Conformance`. Bulle
 
 ### 17.3 Issue Tracker Client
 
-- Candidate issue fetch uses active states and project slug
+- Candidate issue fetch uses active states and project filter (`project_slug` for Linear,
+  `bitable_project_label` via `Labels` for Bitable)
 - Linear query uses the specified project filter field (`slugId`)
 - Empty `fetch_issues_by_states([])` returns empty without API call
 - Pagination preserves order across multiple pages

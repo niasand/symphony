@@ -48,6 +48,7 @@ defmodule SymphonyElixir.Config.Schema do
       field(:kind, :string)
       field(:bitable_app_token, :string)
       field(:bitable_table_id, :string)
+      field(:bitable_project_label, :string)
       field(:active_states, {:array, :string}, default: ["Todo", "In Progress"])
       field(:terminal_states, {:array, :string}, default: ["Closed", "Cancelled", "Canceled", "Duplicate", "Done"])
     end
@@ -62,7 +63,8 @@ defmodule SymphonyElixir.Config.Schema do
           :active_states,
           :terminal_states,
           :bitable_app_token,
-          :bitable_table_id
+          :bitable_table_id,
+          :bitable_project_label
         ],
         empty_values: []
       )
@@ -486,6 +488,11 @@ defmodule SymphonyElixir.Config.Schema do
           resolve_secret_value(
             settings.tracker.bitable_app_token,
             System.get_env("SYMPHONY_BITABLE_APP_TOKEN") || System.get_env("FEISHU_BITABLE_APP_TOKEN")
+          ),
+        bitable_project_label:
+          resolve_secret_value(
+            settings.tracker.bitable_project_label,
+            System.get_env("SYMPHONY_BITABLE_PROJECT_LABEL") || System.get_env("FEISHU_BITABLE_PROJECT_LABEL")
           )
     }
 

@@ -96,6 +96,7 @@ defmodule SymphonyElixir.TestSupport do
           tracker_kind: "bitable",
           tracker_bitable_app_token: "test-app-token",
           tracker_bitable_table_id: "test-table-id",
+          tracker_bitable_project_label: "symphony",
           tracker_active_states: ["Todo", "In Progress"],
           tracker_terminal_states: ["Closed", "Cancelled", "Canceled", "Duplicate", "Done"],
           poll_interval_ms: 30_000,
@@ -139,6 +140,7 @@ defmodule SymphonyElixir.TestSupport do
     tracker_kind = Keyword.get(config, :tracker_kind)
     tracker_bitable_app_token = Keyword.get(config, :tracker_bitable_app_token)
     tracker_bitable_table_id = Keyword.get(config, :tracker_bitable_table_id)
+    tracker_bitable_project_label = Keyword.get(config, :tracker_bitable_project_label)
     tracker_active_states = Keyword.get(config, :tracker_active_states)
     tracker_terminal_states = Keyword.get(config, :tracker_terminal_states)
     poll_interval_ms = Keyword.get(config, :poll_interval_ms)
@@ -183,6 +185,7 @@ defmodule SymphonyElixir.TestSupport do
         "  kind: #{yaml_value(tracker_kind)}",
         "  bitable_app_token: #{yaml_value(tracker_bitable_app_token)}",
         "  bitable_table_id: #{yaml_value(tracker_bitable_table_id)}",
+        "  bitable_project_label: #{yaml_value(tracker_bitable_project_label)}",
         "  active_states: #{yaml_value(tracker_active_states)}",
         "  terminal_states: #{yaml_value(tracker_terminal_states)}",
         "polling:",

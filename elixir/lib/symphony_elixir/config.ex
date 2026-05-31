@@ -144,6 +144,19 @@ defmodule SymphonyElixir.Config do
     {:error, :missing_bitable_table_id}
   end
 
+  defp validate_bitable_tracker(%{kind: "bitable", bitable_project_label: project_label})
+       when not is_binary(project_label) do
+    {:error, :missing_bitable_project_label}
+  end
+
+  defp validate_bitable_tracker(%{kind: "bitable", bitable_project_label: project_label}) do
+    if String.trim(project_label) == "" do
+      {:error, :missing_bitable_project_label}
+    else
+      :ok
+    end
+  end
+
   defp validate_bitable_tracker(_tracker), do: :ok
 
   defp format_config_error(reason) do
@@ -165,6 +178,9 @@ defmodule SymphonyElixir.Config do
 
       :missing_bitable_table_id ->
         "Invalid WORKFLOW.md config: tracker.bitable_table_id is required for bitable tracker (or set FEISHU_BITABLE_TABLE_ID env)"
+
+      :missing_bitable_project_label ->
+        "Invalid WORKFLOW.md config: tracker.bitable_project_label is required for bitable tracker (or set FEISHU_BITABLE_PROJECT_LABEL env)"
 
       other ->
         "Invalid WORKFLOW.md config: #{inspect(other)}"
