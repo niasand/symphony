@@ -180,8 +180,11 @@ defmodule SymphonyElixirWeb.DashboardLive do
                   <tr>
                     <td>
                       <div class="issue-stack">
-                        <span class="issue-id"><%= entry.issue_identifier %></span>
-                        <a class="issue-link" href={"/api/v1/#{entry.issue_identifier}"}>JSON details</a>
+                        <span class="issue-id"><%= entry.issue[:title] || entry.issue_identifier %></span>
+                        <%= if entry.tracker_url do %>
+                          <a class="issue-link" href={entry.tracker_url} target="_blank" rel="noopener">飞书追踪</a>
+                        <% end %>
+                        <a class="issue-link" href={"/api/v1/#{entry.issue_identifier}"}>JSON</a>
                       </div>
                     </td>
                     <td>
