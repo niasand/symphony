@@ -1,0 +1,11 @@
+# Secrets
+.env
+*.env.local
+
+# Elixir
+elixir/_build/
+elixir/deps/
+elixir/erl_crash.dump
+
+# OS
+.DS_Store

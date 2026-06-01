@@ -2,10 +2,10 @@
 # Symphony startup script for pm2
 cd "$(dirname "$0")/.."
 
-export FEISHU_APP_ID="cli_a94c29994e381cd4"
-export FEISHU_APP_SECRET="LSHhJaYGeMB5j6afrO4WafTxst2VgBUC"
-export FEISHU_BITABLE_APP_TOKEN="Ir7pbRChgaYRYns4hmWcNfHJnKe"
-export FEISHU_BITABLE_TABLE_ID="tblHW47GcJNC0SqE"
+# Load secrets from .env (never commit secrets to git)
+set -a
+source "$(dirname "$0")/../.env"
+set +a
 
 # Feishu webhook for task completion notifications
 if [ -n "$FEISHU_WEBHOOK_URL" ]; then
