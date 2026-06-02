@@ -4,5 +4,5 @@ useDefault = true
 [[rules]]
 id = "feishu-app-secret"
 description = "Feishu App Secret"
-regex = '''LSHhJaYGeMB5j6afrO4WafTxst2VgBUC|(?i)feishu_app_secret\s*=\s*['"][a-zA-Z0-9]{32}['"]'''
+regex = '''Ibf2ChQYAxhn6LyZYUkCXfnsQluEIctG|(?i)feishu_app_secret\s*=\s*['"][a-zA-Z0-9]{32}['"]'''
 tags = ["key", "feishu"]
