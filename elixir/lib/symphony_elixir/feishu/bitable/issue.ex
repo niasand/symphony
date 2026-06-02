@@ -21,7 +21,7 @@ defmodule SymphonyElixir.Feishu.Bitable.Issue do
       assigned_to_worker: true,
       created_at: nil,
       updated_at: nil,
-      parent_id: select_value(fields["Parent Issue"]),
+      parent_id: select_value(fields["Parent Issue ID"]),
       sub_task_ids: [],
       complexity: nil
     }

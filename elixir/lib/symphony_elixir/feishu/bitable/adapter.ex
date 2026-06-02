@@ -73,7 +73,7 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
             "Comments" => "[#{format_timestamp()}] Claimed by #{agent_label()}"
           })
 
-        "Resolved" ->
+        state when state in ["Resolved", "Done"] ->
           Map.put(update_fields, "Completed At", System.system_time(:millisecond))
 
         _ ->
@@ -251,7 +251,7 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
     |> maybe_put_field(attrs, :title, "Task")
     |> maybe_put_field(attrs, :description, "Description")
     |> maybe_put_field(attrs, :state, "Status")
-    |> maybe_put_field(attrs, :parent_id, "Parent Issue")
+    |> maybe_put_field(attrs, :parent_id, "Parent Issue ID")
     |> Map.put("Labels", bitable_project_label())
   end
 
