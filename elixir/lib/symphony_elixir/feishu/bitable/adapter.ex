@@ -164,7 +164,7 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
     end
   end
 
-  defp maybe_put_completed_at(fields, %{state: state}) when state in ["Resolved", "Failed"] do
+  defp maybe_put_completed_at(fields, %{state: state}) when state in ["Done", "Resolved", "Failed"] do
     Map.put(fields, "Completed At", System.system_time(:millisecond))
   end
 

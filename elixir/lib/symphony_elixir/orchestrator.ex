@@ -221,9 +221,8 @@ defmodule SymphonyElixir.Orchestrator do
         if input_required_blocker?(running_entry) do
           block_input_required_agent_down(state, issue_id, running_entry, session_id, :normal)
         else
-          # Agent exited normally (e.g., max turns reached) — schedule continuation retry
-          # so the task gets re-dispatched rather than prematurely marked Resolved.
-          handle_normal_agent_continuation(state, issue_id, running_entry, session_id)
+          # Agent exited normally — mark task as Done.
+          handle_normal_agent_completion(state, issue_id, running_entry, session_id)
         end
     end
   end
@@ -286,22 +285,6 @@ defmodule SymphonyElixir.Orchestrator do
 
   defp is_sub_task?(_), do: false
 
-  defp handle_normal_agent_continuation(state, issue_id, running_entry, _session_id) do
-    Logger.info("Agent exited normally for issue_id=#{issue_id}; scheduling continuation retry")
-
-    next_attempt = next_retry_attempt_from_running(running_entry)
-
-    state
-    |> complete_issue(issue_id)
-    |> schedule_issue_retry(issue_id, next_attempt, %{
-      delay_type: :continuation,
-      identifier: Map.get(running_entry, :identifier, issue_id),
-      error: nil,
-      worker_host: Map.get(running_entry, :worker_host),
-      workspace_path: Map.get(running_entry, :workspace_path)
-    })
-  end
-
   defp handle_normal_agent_completion(state, issue_id, running_entry, session_id) do
     if input_required_blocker?(running_entry) do
       block_input_required_agent_down(state, issue_id, running_entry, session_id, :normal)
@@ -315,7 +298,7 @@ defmodule SymphonyElixir.Orchestrator do
       mr_url = maybe_create_merge_request(workspace_path, identifier)
 
       # 2. Update tracker: state + metadata in a single write (avoids partial updates on crash)
-      finalize_tracker_completion(issue_id, "Resolved", running_entry, mr_url)
+      finalize_tracker_completion(issue_id, "Done", running_entry, mr_url)
 
       # 4. Send Feishu webhook notification
       send_completion_webhook(running_entry, mr_url)
@@ -409,7 +392,7 @@ defmodule SymphonyElixir.Orchestrator do
     identifier = Map.get(running_entry, :identifier, issue_id)
 
     # Mark sub-task as resolved in tracker (single atomic write)
-    finalize_tracker_completion(issue_id, "Resolved", running_entry, nil)
+    finalize_tracker_completion(issue_id, "Done", running_entry, nil)
 
     cleanup_issue_workspace(identifier, Map.get(running_entry, :worker_host))
 
@@ -471,7 +454,7 @@ defmodule SymphonyElixir.Orchestrator do
     identifier = Map.get(running_entry, :identifier, issue_id)
 
     # Mark parent as resolved (single atomic write)
-    finalize_tracker_completion(issue_id, "Resolved", running_entry, nil)
+    finalize_tracker_completion(issue_id, "Done", running_entry, nil)
     send_completion_webhook(running_entry, nil)
 
     # Cleanup
