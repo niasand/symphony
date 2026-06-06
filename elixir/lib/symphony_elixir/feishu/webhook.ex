@@ -20,8 +20,8 @@ defmodule SymphonyElixir.Feishu.Webhook do
           error: String.t() | nil
         }
 
-  @spec send_completion_notification(notification()) :: :ok | {:error, term()}
-  def send_completion_notification(%{} = notification) do
+  @spec send_lifecycle_notification(notification()) :: :ok | {:error, term()}
+  def send_lifecycle_notification(%{} = notification) do
     webhook_url = fetch_webhook_url()
 
     case webhook_url do
@@ -31,8 +31,9 @@ defmodule SymphonyElixir.Feishu.Webhook do
 
       url when is_binary(url) ->
         payload = build_card_payload(notification)
+        opts = Keyword.merge([json: payload, connect_options: [timeout: 10_000]], req_options())
 
-        case Req.post(url, json: payload, connect_options: [timeout: 10_000]) do
+        case Req.post(url, opts) do
           {:ok, %Req.Response{status: 200, body: %{"code" => 0}}} ->
             Logger.info("Feishu webhook notification sent for #{notification.identifier}")
             :ok
@@ -51,6 +52,9 @@ defmodule SymphonyElixir.Feishu.Webhook do
         end
     end
   end
+
+  @spec send_completion_notification(notification()) :: :ok | {:error, term()}
+  def send_completion_notification(%{} = notification), do: send_lifecycle_notification(notification)
 
   # --- Private helpers ---
 
@@ -74,6 +78,10 @@ defmodule SymphonyElixir.Feishu.Webhook do
 
   defp resolve_webhook_url(url), do: url
 
+  defp req_options do
+    Application.get_env(:symphony_elixir, :feishu_webhook_req_options, [])
+  end
+
   defp build_card_payload(notification) do
     status = Map.get(notification, :status, "Unknown")
     {title_text, header_color} = status_display(status)
@@ -95,7 +103,7 @@ defmodule SymphonyElixir.Feishu.Webhook do
     elements =
       case Map.get(notification, :branch_name) do
         branch when is_binary(branch) and branch != "" ->
-          elements ++ [build_lark_md_element("**Branch:** `#{branch}")]
+          elements ++ [build_lark_md_element("**Branch:** `#{branch}`")]
 
         _ ->
           elements
@@ -143,6 +151,7 @@ defmodule SymphonyElixir.Feishu.Webhook do
   defp status_display("Resolved"), do: {"✅ Task Completed", "green"}
   defp status_display("Failed"), do: {"❌ Task Failed", "red"}
   defp status_display("In Progress"), do: {"🔄 Task In Progress", "blue"}
+  defp status_display("Open"), do: {"📋 Task Created", "blue"}
   defp status_display(other), do: {"📋 Task #{other}", "blue"}
 
   defp build_lark_md_element(content) do

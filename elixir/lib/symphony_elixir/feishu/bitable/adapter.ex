@@ -14,6 +14,7 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
   require Logger
 
   alias SymphonyElixir.Feishu.Bitable.{Client, Issue}
+  alias SymphonyElixir.Feishu.Webhook
 
   @impl true
   def fetch_candidate_issues do
@@ -83,6 +84,7 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
     case Client.update_record(bitable_app_token(), bitable_table_id(), record_id, update_fields) do
       {:ok, _} ->
         Logger.info("Bitable record #{record_id} state updated to #{state_name}")
+        maybe_send_lifecycle_notification(record_id, state_name)
         :ok
 
       {:error, reason} ->
@@ -97,7 +99,9 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
 
     case Client.create_record(bitable_app_token(), bitable_table_id(), fields) do
       {:ok, record} ->
-        {:ok, Issue.from_record(record)}
+        issue = Issue.from_record(record)
+        send_lifecycle_notification(%{identifier: issue.identifier, title: issue.title, status: issue.state})
+        {:ok, issue}
 
       {:error, reason} ->
         Logger.warning("Failed to create Bitable record: #{inspect(reason)}")
@@ -199,6 +203,38 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
         Logger.warning("Bitable metadata update FAILED for #{record_id}: #{inspect(reason)} fields=#{inspect(Map.keys(fields))}")
 
         {:error, reason}
+    end
+  end
+
+  defp maybe_send_lifecycle_notification(record_id, "In Progress") do
+    case Client.get_record(bitable_app_token(), bitable_table_id(), record_id) do
+      {:ok, record} ->
+        issue = Issue.from_record(record)
+        send_lifecycle_notification(%{identifier: issue.identifier, title: issue.title, status: "In Progress"})
+
+      {:error, reason} ->
+        Logger.warning("Could not fetch Bitable record #{record_id} for lifecycle notification: #{inspect(reason)}")
+    end
+  end
+
+  defp maybe_send_lifecycle_notification(_record_id, _state_name), do: :ok
+
+  defp send_lifecycle_notification(notification) when is_map(notification) do
+    notification =
+      notification
+      |> Map.put_new(:mr_url, nil)
+      |> Map.put_new(:branch_name, nil)
+      |> Map.put_new(:input_tokens, 0)
+      |> Map.put_new(:output_tokens, 0)
+      |> Map.put_new(:total_tokens, 0)
+      |> Map.put_new(:error, nil)
+
+    case Webhook.send_lifecycle_notification(notification) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning("Feishu lifecycle webhook notification failed: #{inspect(reason)}")
     end
   end
 
