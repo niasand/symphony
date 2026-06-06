@@ -10,7 +10,6 @@ defmodule SymphonyElixir.Orchestrator do
   alias SymphonyElixir.{AgentRunner, ComplexityClassifier, Config, Git, PlannerPrompt, StatusDashboard, TaskDecomposer, Tracker, Workspace}
   alias SymphonyElixir.Codex.EventDetails
   alias SymphonyElixir.Feishu.Bitable.Adapter, as: BitableAdapter
-  alias SymphonyElixir.Feishu.Webhook
   alias SymphonyElixir.Tracker.Issue
 
   @continuation_retry_delay_ms 1_000
@@ -286,31 +285,53 @@ defmodule SymphonyElixir.Orchestrator do
   defp is_sub_task?(_), do: false
 
   defp handle_normal_agent_completion(state, issue_id, running_entry, session_id) do
-    if input_required_blocker?(running_entry) do
-      block_input_required_agent_down(state, issue_id, running_entry, session_id, :normal)
-    else
-      Logger.info("Agent task completed for issue_id=#{issue_id} session_id=#{session_id}")
+    cond do
+      input_required_blocker?(running_entry) ->
+        block_input_required_agent_down(state, issue_id, running_entry, session_id, :normal)
 
-      workspace_path = Map.get(running_entry, :workspace_path)
-      identifier = Map.get(running_entry, :identifier, issue_id)
+      running_entry_active?(running_entry) ->
+        schedule_active_state_continuation(state, issue_id, running_entry, session_id)
 
-      # 1. Create Merge Request if workspace has a git repo with commits
-      mr_url = maybe_create_merge_request(workspace_path, identifier)
+      true ->
+        Logger.info("Agent task completed for issue_id=#{issue_id} session_id=#{session_id}")
 
-      # 2. Update tracker: state + metadata in a single write (avoids partial updates on crash)
-      finalize_tracker_completion(issue_id, "Done", running_entry, mr_url)
+        workspace_path = Map.get(running_entry, :workspace_path)
+        identifier = Map.get(running_entry, :identifier, issue_id)
 
-      # 4. Send Feishu webhook notification
-      send_completion_webhook(running_entry, mr_url)
+        # 1. Create Merge Request if workspace has a git repo with commits
+        mr_url = maybe_create_merge_request(workspace_path, identifier)
 
-      # 5. Complete and cleanup
-      cleanup_issue_workspace(identifier, Map.get(running_entry, :worker_host))
+        # 2. Update tracker: state + metadata in a single write (avoids partial updates on crash)
+        finalize_tracker_completion(issue_id, "Done", running_entry, mr_url)
 
-      state
-      |> complete_issue(issue_id)
-      |> release_issue_claim(issue_id)
+        # 3. Complete and cleanup
+        cleanup_issue_workspace(identifier, Map.get(running_entry, :worker_host))
+
+        state
+        |> complete_issue(issue_id)
+        |> release_issue_claim(issue_id)
     end
   end
+
+  defp schedule_active_state_continuation(state, issue_id, running_entry, session_id) do
+    Logger.info("Agent task exited normally while issue stayed active for issue_id=#{issue_id} session_id=#{session_id}; scheduling continuation")
+
+    state
+    |> complete_issue(issue_id)
+    |> schedule_issue_retry(issue_id, next_retry_attempt_from_running(running_entry), %{
+      identifier: Map.get(running_entry, :identifier, issue_id),
+      error: "agent exited normally while issue remained active",
+      worker_host: Map.get(running_entry, :worker_host),
+      workspace_path: Map.get(running_entry, :workspace_path),
+      delay_type: :continuation
+    })
+  end
+
+  defp running_entry_active?(%{issue: %Issue{state: state_name}}) do
+    active_issue_state?(state_name, active_state_set())
+  end
+
+  defp running_entry_active?(_running_entry), do: false
 
   defp handle_planner_completion(state, issue_id, running_entry, session_id) do
     Logger.info("Planner agent completed for issue_id=#{issue_id} session_id=#{session_id}")
@@ -455,7 +476,6 @@ defmodule SymphonyElixir.Orchestrator do
 
     # Mark parent as resolved (single atomic write)
     finalize_tracker_completion(issue_id, "Done", running_entry, nil)
-    send_completion_webhook(running_entry, nil)
 
     # Cleanup
     cleanup_issue_workspace(identifier, Map.get(running_entry, :worker_host))
@@ -2482,31 +2502,6 @@ defmodule SymphonyElixir.Orchestrator do
   end
 
   defp finalize_tracker_completion(_issue_id, _state_name, _running_entry, _mr_url), do: :ok
-
-  defp send_completion_webhook(running_entry, mr_url) do
-    notification = %{
-      identifier: Map.get(running_entry, :identifier, "unknown"),
-      title: issue_title_from_entry(running_entry),
-      status: "Resolved",
-      mr_url: mr_url,
-      branch_name: Map.get(running_entry, :workspace_path) |> read_git_branch(),
-      input_tokens: Map.get(running_entry, :codex_input_tokens, 0),
-      output_tokens: Map.get(running_entry, :codex_output_tokens, 0),
-      total_tokens: Map.get(running_entry, :codex_total_tokens, 0),
-      error: nil
-    }
-
-    case Webhook.send_completion_notification(notification) do
-      :ok ->
-        :ok
-
-      {:error, reason} ->
-        Logger.warning("Feishu webhook notification failed: #{inspect(reason)}")
-    end
-  end
-
-  defp issue_title_from_entry(%{issue: %Issue{title: title}}) when is_binary(title), do: title
-  defp issue_title_from_entry(_entry), do: "Untitled"
 
   # ── Tracker status update helpers ──
 

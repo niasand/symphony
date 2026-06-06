@@ -45,12 +45,12 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
 
   @impl true
   def create_comment(record_id, body) when is_binary(record_id) and is_binary(body) do
-    with {:ok, current} <- Client.get_record(bitable_app_token(), bitable_table_id(), record_id) do
+    with {:ok, current} <- client_module().get_record(bitable_app_token(), bitable_table_id(), record_id) do
       existing = extract_text_field(current, "Comments")
       separator = if existing != "", do: "\n\n---\n\n", else: ""
       new_comment = "#{separator}[#{format_timestamp()}] #{body}"
 
-      case Client.update_record(
+      case client_module().update_record(
              bitable_app_token(),
              bitable_table_id(),
              record_id,
@@ -81,10 +81,10 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
           update_fields
       end
 
-    case Client.update_record(bitable_app_token(), bitable_table_id(), record_id, update_fields) do
+    case client_module().update_record(bitable_app_token(), bitable_table_id(), record_id, update_fields) do
       {:ok, _} ->
         Logger.info("Bitable record #{record_id} state updated to #{state_name}")
-        maybe_send_lifecycle_notification(record_id, state_name)
+        send_lifecycle_notification_for_record(record_id, state_name)
         :ok
 
       {:error, reason} ->
@@ -97,7 +97,7 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
   def create_issue(attrs) when is_map(attrs) do
     fields = build_create_fields(attrs)
 
-    case Client.create_record(bitable_app_token(), bitable_table_id(), fields) do
+    case client_module().create_record(bitable_app_token(), bitable_table_id(), fields) do
       {:ok, record} ->
         issue = Issue.from_record(record)
         send_lifecycle_notification(%{identifier: issue.identifier, title: issue.title, status: issue.state})
@@ -125,7 +125,7 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
   # --- Private helpers ---
 
   defp fetch_issue_state_by_id(record_id) do
-    case Client.get_record(bitable_app_token(), bitable_table_id(), record_id) do
+    case client_module().get_record(bitable_app_token(), bitable_table_id(), record_id) do
       {:ok, record} ->
         [Issue.from_record(record)]
 
@@ -145,7 +145,7 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
         ]
       }
 
-      case Client.list_records(bitable_app_token(), bitable_table_id(), filter: filter) do
+      case client_module().list_records(bitable_app_token(), bitable_table_id(), filter: filter) do
         {:ok, records} -> {:cont, {:ok, acc ++ Enum.map(records, &Issue.from_record/1)}}
         {:error, reason} -> {:halt, {:error, reason}}
       end
@@ -185,7 +185,7 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
   defp maybe_put_mr_comment(fields, _metadata, _record_id), do: fields
 
   defp fetch_comments(record_id) do
-    case Client.get_record(bitable_app_token(), bitable_table_id(), record_id) do
+    case client_module().get_record(bitable_app_token(), bitable_table_id(), record_id) do
       {:ok, data} -> extract_text_field(data, "Comments")
       _ -> ""
     end
@@ -194,9 +194,10 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
   defp update_metadata_fields(record_id, metadata, fields) do
     Logger.debug("Bitable metadata update for #{record_id}: #{inspect(Map.keys(fields))}")
 
-    case Client.update_record(bitable_app_token(), bitable_table_id(), record_id, fields) do
+    case client_module().update_record(bitable_app_token(), bitable_table_id(), record_id, fields) do
       {:ok, _data} ->
         Logger.info("Bitable metadata updated for #{record_id} state=#{metadata[:state] || "unchanged"}")
+        maybe_send_metadata_lifecycle_notification(record_id, metadata)
         :ok
 
       {:error, reason} ->
@@ -206,18 +207,23 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
     end
   end
 
-  defp maybe_send_lifecycle_notification(record_id, "In Progress") do
-    case Client.get_record(bitable_app_token(), bitable_table_id(), record_id) do
+  defp maybe_send_metadata_lifecycle_notification(record_id, %{state: state_name})
+       when is_binary(state_name) and state_name != "" do
+    send_lifecycle_notification_for_record(record_id, state_name)
+  end
+
+  defp maybe_send_metadata_lifecycle_notification(_record_id, _metadata), do: :ok
+
+  defp send_lifecycle_notification_for_record(record_id, state_name) do
+    case client_module().get_record(bitable_app_token(), bitable_table_id(), record_id) do
       {:ok, record} ->
         issue = Issue.from_record(record)
-        send_lifecycle_notification(%{identifier: issue.identifier, title: issue.title, status: "In Progress"})
+        send_lifecycle_notification(%{identifier: issue.identifier, title: issue.title, status: state_name})
 
       {:error, reason} ->
         Logger.warning("Could not fetch Bitable record #{record_id} for lifecycle notification: #{inspect(reason)}")
     end
   end
-
-  defp maybe_send_lifecycle_notification(_record_id, _state_name), do: :ok
 
   defp send_lifecycle_notification(notification) when is_map(notification) do
     notification =
@@ -236,6 +242,10 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
       {:error, reason} ->
         Logger.warning("Feishu lifecycle webhook notification failed: #{inspect(reason)}")
     end
+  end
+
+  defp client_module do
+    Application.get_env(:symphony_elixir, :bitable_client_module, Client)
   end
 
   defp bitable_app_token do

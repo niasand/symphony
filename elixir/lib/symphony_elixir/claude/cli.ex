@@ -143,7 +143,7 @@ defmodule SymphonyElixir.Claude.CLI do
     receive_loop(port, session, on_message, Config.settings!().claude.turn_timeout_ms, "", 0, [])
   end
 
-  defp receive_loop(port, session, on_message, timeout_ms, pending, pending_bytes, last_lines) do
+  defp receive_loop(port, session, on_message, timeout_ms, pending, _pending_bytes, last_lines) do
     # Try to extract a complete line from the pending buffer first
     case extract_line(pending) do
       {line, rest} ->
@@ -163,16 +163,17 @@ defmodule SymphonyElixir.Claude.CLI do
               receive_loop(port, session, on_message, timeout_ms, new_pending, new_bytes, last_lines)
             end
 
-      {^port, {:exit_status, 0}} ->
-        emit_message(on_message, :turn_completed, %{payload: %{exit_code: 0}})
-        {:ok, %{result: :process_exited_clean, conversation_id: session.conversation_id}}
+          {^port, {:exit_status, 0}} ->
+            emit_message(on_message, :turn_completed, %{payload: %{exit_code: 0}})
+            {:ok, %{result: :process_exited_clean, conversation_id: session.conversation_id}}
 
-      {^port, {:exit_status, status}} ->
-        Logger.warning("Claude CLI port_exit=#{status} last_output=#{inspect(last_lines)}")
-        {:error, {:turn_failed, {:port_exit, status, last_lines}}}
-    after
-      timeout_ms ->
-        {:error, :turn_timeout}
+          {^port, {:exit_status, status}} ->
+            Logger.warning("Claude CLI port_exit=#{status} last_output=#{inspect(last_lines)}")
+            {:error, {:turn_failed, {:port_exit, status, last_lines}}}
+        after
+          timeout_ms ->
+            {:error, :turn_timeout}
+        end
     end
   end
 

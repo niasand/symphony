@@ -67,6 +67,28 @@ defmodule SymphonyElixir.Feishu.WebhookTest do
     assert payload_text(payload) =~ "**Title:** Claim task notification"
   end
 
+  test "sends generic lifecycle card for custom states" do
+    test_pid = self()
+
+    Req.Test.expect(__MODULE__, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      send(test_pid, {:webhook_payload, Jason.decode!(body)})
+      Req.Test.json(conn, %{"code" => 0})
+    end)
+
+    assert :ok =
+             Webhook.send_lifecycle_notification(%{
+               identifier: "MT-102",
+               title: "Review task notification",
+               status: "In Review"
+             })
+
+    assert_receive {:webhook_payload, payload}
+    assert get_in(payload, ["card", "header", "title", "content"]) == "📋 Task In Review"
+    assert payload_text(payload) =~ "**Task:** MT-102"
+    assert payload_text(payload) =~ "**Title:** Review task notification"
+  end
+
   defp payload_text(payload) do
     payload
     |> get_in(["card", "elements"])
