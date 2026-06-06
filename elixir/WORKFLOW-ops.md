@@ -27,6 +27,7 @@ decomposition:
 
 workspace:
   root: /tmp/symphony_workspaces
+  source_repo: /Users/zhiwei/Documents/token_usage
 
 hooks:
   timeoutMs: 30000
