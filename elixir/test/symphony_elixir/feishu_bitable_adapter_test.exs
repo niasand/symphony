@@ -121,6 +121,29 @@ defmodule SymphonyElixir.Feishu.Bitable.AdapterTest do
     refute_receive {:webhook_payload, _payload}, 100
   end
 
+  test "webhook failure is logged with notification fields and does not fail tracker update", %{agent: agent} do
+    put_record(agent, "rec-webhook-fail", %{
+      "uuid" => "MT-WEBHOOK-FAIL",
+      "Task" => "Webhook failure task",
+      "Status" => "Open"
+    })
+
+    Req.Test.expect(__MODULE__, fn conn ->
+      Req.Test.json(conn, %{"code" => 190_001, "msg" => "fake rejected"})
+    end)
+
+    log =
+      capture_log(fn ->
+        assert :ok = Adapter.update_issue_state("rec-webhook-fail", "In Progress")
+      end)
+
+    assert log =~ "Feishu lifecycle webhook notification failed"
+    assert log =~ "notification_id=bitable:rec-webhook-fail:in-progress"
+    assert log =~ "record_id=rec-webhook-fail"
+    assert log =~ "issue_identifier=MT-WEBHOOK-FAIL"
+    assert log =~ "status=In Progress"
+  end
+
   defp expect_webhook do
     test_pid = self()
 

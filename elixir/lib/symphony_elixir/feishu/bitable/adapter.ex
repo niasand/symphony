@@ -100,7 +100,15 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
     case client_module().create_record(bitable_app_token(), bitable_table_id(), fields) do
       {:ok, record} ->
         issue = Issue.from_record(record)
-        send_lifecycle_notification(%{identifier: issue.identifier, title: issue.title, status: issue.state})
+
+        send_lifecycle_notification(%{
+          identifier: issue.identifier,
+          title: issue.title,
+          status: issue.state,
+          record_id: issue.id,
+          notification_id: lifecycle_notification_id(issue.id, issue.state)
+        })
+
         {:ok, issue}
 
       {:error, reason} ->
@@ -218,7 +226,14 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
     case client_module().get_record(bitable_app_token(), bitable_table_id(), record_id) do
       {:ok, record} ->
         issue = Issue.from_record(record)
-        send_lifecycle_notification(%{identifier: issue.identifier, title: issue.title, status: state_name})
+
+        send_lifecycle_notification(%{
+          identifier: issue.identifier,
+          title: issue.title,
+          status: state_name,
+          record_id: record_id,
+          notification_id: lifecycle_notification_id(record_id, state_name)
+        })
 
       {:error, reason} ->
         Logger.warning("Could not fetch Bitable record #{record_id} for lifecycle notification: #{inspect(reason)}")
@@ -237,11 +252,29 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
 
     case Webhook.send_lifecycle_notification(notification) do
       :ok ->
+        Logger.info(
+          "Feishu lifecycle notification delivered notification_id=#{notification[:notification_id] || "n/a"} record_id=#{notification[:record_id] || "n/a"} issue_identifier=#{notification[:identifier] || "n/a"} status=#{notification[:status] || "n/a"}"
+        )
+
         :ok
 
       {:error, reason} ->
-        Logger.warning("Feishu lifecycle webhook notification failed: #{inspect(reason)}")
+        Logger.warning(
+          "Feishu lifecycle webhook notification failed notification_id=#{notification[:notification_id] || "n/a"} record_id=#{notification[:record_id] || "n/a"} issue_identifier=#{notification[:identifier] || "n/a"} status=#{notification[:status] || "n/a"} reason=#{inspect(reason)}"
+        )
     end
+  end
+
+  defp lifecycle_notification_id(record_id, state_name) do
+    normalized_state =
+      state_name
+      |> to_string()
+      |> String.trim()
+      |> String.downcase()
+      |> String.replace(~r/[^a-z0-9]+/, "-")
+      |> String.trim("-")
+
+    "bitable:#{record_id}:#{normalized_state}"
   end
 
   defp client_module do
