@@ -215,25 +215,28 @@ defmodule SymphonyElixir.Feishu.Bitable.Adapter do
     end
   end
 
-  defp maybe_send_metadata_lifecycle_notification(record_id, %{state: state_name})
+  defp maybe_send_metadata_lifecycle_notification(record_id, %{state: state_name} = metadata)
        when is_binary(state_name) and state_name != "" do
-    send_lifecycle_notification_for_record(record_id, state_name)
+    send_lifecycle_notification_for_record(record_id, state_name, metadata)
   end
 
   defp maybe_send_metadata_lifecycle_notification(_record_id, _metadata), do: :ok
 
-  defp send_lifecycle_notification_for_record(record_id, state_name) do
+  defp send_lifecycle_notification_for_record(record_id, state_name, extra_notification \\ %{}) do
     case client_module().get_record(bitable_app_token(), bitable_table_id(), record_id) do
       {:ok, record} ->
         issue = Issue.from_record(record)
 
-        send_lifecycle_notification(%{
+        extra_notification
+        |> Map.take([:mr_url, :branch_name, :input_tokens, :output_tokens, :total_tokens, :error])
+        |> Map.merge(%{
           identifier: issue.identifier,
           title: issue.title,
           status: state_name,
           record_id: record_id,
           notification_id: lifecycle_notification_id(record_id, state_name)
         })
+        |> send_lifecycle_notification()
 
       {:error, reason} ->
         Logger.warning("Could not fetch Bitable record #{record_id} for lifecycle notification: #{inspect(reason)}")

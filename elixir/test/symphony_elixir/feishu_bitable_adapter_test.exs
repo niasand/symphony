@@ -26,9 +26,13 @@ defmodule SymphonyElixir.Feishu.Bitable.AdapterTest do
     end
 
     def get_record(_app_token, _table_id, record_id) do
-      case Agent.get(agent(), &Map.get(&1, record_id)) do
-        nil -> {:error, :not_found}
-        record -> {:ok, record}
+      if Application.get_env(:symphony_elixir, :fake_bitable_get_error) do
+        {:error, :fake_get_failed}
+      else
+        case Agent.get(agent(), &Map.get(&1, record_id)) do
+          nil -> {:error, :not_found}
+          record -> {:ok, record}
+        end
       end
     end
 
@@ -44,6 +48,7 @@ defmodule SymphonyElixir.Feishu.Bitable.AdapterTest do
     previous_req_options = Application.get_env(:symphony_elixir, :feishu_webhook_req_options)
     previous_client = Application.get_env(:symphony_elixir, :bitable_client_module)
     previous_fake_error = Application.get_env(:symphony_elixir, :fake_bitable_update_error)
+    previous_fake_get_error = Application.get_env(:symphony_elixir, :fake_bitable_get_error)
 
     {:ok, agent} = Agent.start_link(fn -> %{} end)
 
@@ -57,6 +62,7 @@ defmodule SymphonyElixir.Feishu.Bitable.AdapterTest do
       restore_app_env(:feishu_webhook_req_options, previous_req_options)
       restore_app_env(:bitable_client_module, previous_client)
       restore_app_env(:fake_bitable_update_error, previous_fake_error)
+      restore_app_env(:fake_bitable_get_error, previous_fake_get_error)
       Application.delete_env(:symphony_elixir, :fake_bitable_client_agent)
     end)
 
@@ -104,6 +110,30 @@ defmodule SymphonyElixir.Feishu.Bitable.AdapterTest do
     assert payload_text(payload) =~ "**Title:** Failed task"
   end
 
+  test "completion metadata notification includes MR, branch, and token details", %{agent: agent} do
+    put_record(agent, "rec-done", %{"uuid" => "MT-DONE", "Task" => "Done task", "Status" => "In Progress"})
+    expect_webhook()
+
+    assert :ok =
+             Adapter.update_record_with_metadata("rec-done", %{
+               state: "Done",
+               mr_url: "https://example.invalid/mr/1",
+               branch_name: "feature/status-notify",
+               input_tokens: 12_345,
+               output_tokens: 678,
+               total_tokens: 13_023
+             })
+
+    assert_receive {:webhook_payload, payload}
+    text = payload_text(payload)
+    assert get_in(payload, ["card", "header", "title", "content"]) == "📋 Task Done"
+    assert text =~ "**Task:** MT-DONE"
+    assert text =~ "**Title:** Done task"
+    assert text =~ "**MR:** [View MR](https://example.invalid/mr/1)"
+    assert text =~ "**Branch:** `feature/status-notify`"
+    assert text =~ "**Tokens:** 13,023 total (12,345 in / 678 out)"
+  end
+
   test "metadata without state does not send lifecycle notification", %{agent: agent} do
     put_record(agent, "rec-metadata", %{"uuid" => "MT-META", "Task" => "Metadata task", "Status" => "In Progress"})
 
@@ -118,6 +148,31 @@ defmodule SymphonyElixir.Feishu.Bitable.AdapterTest do
 
     assert {:error, :fake_update_failed} = Adapter.update_issue_state("rec-error", "In Progress")
 
+    refute_receive {:webhook_payload, _payload}, 100
+  end
+
+  test "missing webhook configuration does not fail tracker update", %{agent: agent} do
+    put_record(agent, "rec-no-webhook", %{"uuid" => "MT-NO-WEBHOOK", "Task" => "No webhook task", "Status" => "Open"})
+    System.delete_env("FEISHU_WEBHOOK_URL")
+
+    log =
+      capture_log(fn ->
+        assert :ok = Adapter.update_issue_state("rec-no-webhook", "In Progress")
+      end)
+
+    refute log =~ "Feishu lifecycle webhook notification failed"
+  end
+
+  test "record fetch failure after state update does not fail tracker update" do
+    Application.put_env(:symphony_elixir, :fake_bitable_get_error, true)
+
+    log =
+      capture_log(fn ->
+        assert :ok = Adapter.update_issue_state("rec-fetch-fails", "In Progress")
+      end)
+
+    assert log =~ "Could not fetch Bitable record rec-fetch-fails for lifecycle notification"
+    assert log =~ ":fake_get_failed"
     refute_receive {:webhook_payload, _payload}, 100
   end
 
