@@ -155,15 +155,15 @@ curl -X POST http://localhost:3100/api/v1/refresh
 
 ```bash
 # Full CI pipeline (format + lint + test + dialyzer)
-make all
+mise exec -- make all
 
 # Individual checks
-make fmt            # auto-format code
-make fmt-check      # check formatting without modifying
-make lint           # credo lint
-make test           # run tests (requires port 3100 to be free)
-make coverage       # run tests with coverage
-make dialyzer       # type checking
+mise exec -- make fmt            # auto-format code
+mise exec -- make fmt-check      # check formatting without modifying
+mise exec -- make lint           # credo lint
+mise exec -- make test           # run tests (requires port 3100 to be free)
+mise exec -- make coverage       # run tests with coverage
+mise exec -- make dialyzer       # type checking
 ```
 
 ### Logs
@@ -227,16 +227,16 @@ Via Dashboard: open `http://localhost:3100` in a browser.
 
 ```bash
 # Run all tests (must stop Symphony first if port 3100 is occupied)
-make test
+mise exec -- make test
 
 # Run with coverage
-make coverage
+mise exec -- make coverage
 
 # Run specific test file
 mise exec -- mix test test/symphony_elixir/complexity_classifier_test.exs
 
 # Full CI (format + lint + test + dialyzer)
-make all
+mise exec -- make all
 ```
 
 ## Project Layout
