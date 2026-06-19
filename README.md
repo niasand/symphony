@@ -34,6 +34,12 @@ help with the setup:
 > Set up Symphony for my repository based on
 > https://github.com/openai/symphony/blob/main/elixir/README.md
 
+> [!TIP]
+> The Elixir implementation manages its toolchain with [mise](https://mise.jdx.dev/). To avoid
+> slowing down your shell, run its commands with the `mise exec --` prefix (e.g.
+> `mise exec -- mix test`) instead of enabling `mise activate`. See
+> [`elixir/AGENTS.md`](elixir/AGENTS.md) for the full command list.
+
 ---
 
 ## License

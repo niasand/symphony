@@ -5,8 +5,14 @@ This directory contains the Elixir agent orchestration service that polls Linear
 ## Environment
 
 - Elixir: `1.19.x` (OTP 28) via `mise`.
-- Install deps: `mix setup`.
-- Main quality gate: `make all` (format check, lint, coverage, dialyzer).
+- Do not enable mise's shell hook (`mise activate`) — it slows terminal startup. Prefix every
+  Elixir command with `mise exec --` so the managed toolchain resolves without paying shell-init cost:
+  - Install deps: `mise exec -- mix setup`
+  - Build the escript: `mise exec -- mix build`
+  - Run tests: `mise exec -- mix test`
+  - Quality gate: `mise exec -- make all` (format check, lint, coverage, dialyzer)
+  - Run a workflow: `mise exec -- ./bin/symphony ./WORKFLOW.md`
+- All of the above run from this `elixir/` directory.
 
 
 ## Codebase-Specific Conventions
@@ -29,7 +35,7 @@ This directory contains the Elixir agent orchestration service that polls Linear
 Run targeted tests while iterating, then run full gates before handoff.
 
 ```bash
-make all
+mise exec -- make all
 ```
 
 ## Required Rules
@@ -43,7 +49,7 @@ make all
 Validation command:
 
 ```bash
-mix specs.check
+mise exec -- mix specs.check
 ```
 
 ## PR Requirements
@@ -52,7 +58,7 @@ mix specs.check
 - Validate PR body locally when needed:
 
 ```bash
-mix pr_body.check --file /path/to/pr_body.md
+mise exec -- mix pr_body.check --file /path/to/pr_body.md
 ```
 
 ## Docs Update Policy
