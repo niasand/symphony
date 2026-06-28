@@ -8,18 +8,18 @@ tracker:
   terminal_states: ["Resolved", "Done", "Failed", "Cancelled"]
 
 polling:
-  intervalMs: 5000
+  interval_ms: 5000
 
 agent:
   kind: claude
-  maxConcurrentAgents: 2
-  maxTurns: 8
+  max_concurrent_agents: 2
+  max_turns: 8
 
 claude:
   command: claude
-  maxTurnsPerInvocation: 8
-  turnTimeoutMs: 600000
-  stallTimeoutMs: 120000
+  max_turns_per_invocation: 8
+  turn_timeout_ms: 600000
+  stall_timeout_ms: 120000
   skip_permissions: true
 
 decomposition:

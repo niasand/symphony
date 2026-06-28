@@ -234,3 +234,4 @@ Only Feishu Bitable adapter exists. The Tracker behaviour is already defined but
 **Lesson**: When a config schema is defined in a typed language (Ecto / Pydantic / serde), the field-name casing in the source file MUST match the schema exactly. A "normalize_keys" step is not necessarily a case-converter — read what it actually does. Silent fallback to defaults is the most dangerous config failure mode: no error, no log, just wrong runtime behavior. Tell-tale symptom: values shown in logs differ from values written in the config file.
 
 **Files**: `elixir/WORKFLOW-ops.md` (unfixed), `elixir/WORKFLOW-happyclaw.md` + `elixir/WORKFLOW-miniagent.md` (correct snake_case)
+[AI-REVIEW] Large commit detected: 311 lines added. Consider reviewing for AI Psychosis.
