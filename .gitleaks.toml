@@ -6,3 +6,7 @@ id = "feishu-app-secret"
 description = "Feishu App Secret"
 regex = '''Ibf2ChQYAxhn6LyZYUkCXfnsQluEIctG|(?i)feishu_app_secret\s*=\s*['"][a-zA-Z0-9]{32}['"]'''
 tags = ["key", "feishu"]
+
+[[allowlists]]
+description = "Bitable app_token is a public resource ID (table locator), not a credential. Real secrets (FEISHU_APP_SECRET) stay in .env (gitignored)."
+regexes = ['''Ir7pbRChgaYRYns4hmWcNfHJnKe''']

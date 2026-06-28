@@ -214,3 +214,23 @@ Only Feishu Bitable adapter exists. The Tracker behaviour is already defined but
 [AI-REVIEW] Large commit detected: 302 lines added. Consider reviewing for AI Psychosis.
 [AI-REVIEW] Large commit detected: 333 lines added. Consider reviewing for AI Psychosis.
 [AI-REVIEW] Large commit detected: 314 lines added. Consider reviewing for AI Psychosis.
+
+## [2026-06-28] Finding: WORKFLOW-ops.md camelCase frontmatter silently ignored — config falls back to defaults
+
+**Problem**: `WORKFLOW-ops.md` uses camelCase keys in its YAML frontmatter (`intervalMs`, `maxConcurrentAgents`, `maxTurns`, `turnTimeoutMs`, `stallTimeoutMs`, `skipPermissions`). They are silently dropped at parse time, so the ops orchestrator runs on schema defaults instead of the intended values:
+- `polling.intervalMs: 5000` → actual 30000ms (30s default) — polling 6× slower than intended
+- `agent.maxConcurrentAgents: 2` → actual 10 (default)
+- `agent.maxTurns: 8` → actual 20 (default)
+- `claude.turnTimeoutMs` / `stallTimeoutMs` / `skipPermissions` → defaults
+
+**Root cause**: `Config.parse/1` (`elixir/lib/symphony_elixir/config/schema.ex:390-403`) calls `normalize_keys/1` then Ecto `cast`. `normalize_key` (schema.ex:526-527) only converts atom→string — it does NOT convert camelCase→snake_case. Ecto `cast` then drops any key not matching the embedded_schema's snake_case fields and falls back to defaults. All schema fields are snake_case (`interval_ms`, `max_concurrent_agents`, `max_turns`, `turn_timeout_ms`, `stall_timeout_ms`, `skip_permissions`).
+
+**Impact**: ops still works (defaults are valid), just not with the tuned values its author intended. No crash, no error log — pure silent misconfiguration.
+
+**Verification**: The new `WORKFLOW-happyclaw.md` (snake_case) startup log shows `Agents: 0/3` (max_concurrent_agents=3 effective) and `Next refresh: 5s` (interval_ms=5000 effective). If ops's camelCase keys were effective it would show `0/2` and `5s`; it shows defaults instead, proving the keys are dropped.
+
+**Fix**: `WORKFLOW-happyclaw.md` + `WORKFLOW-miniagent.md` written in snake_case throughout. `WORKFLOW-ops.md` intentionally NOT modified — it is a running production orchestrator and changing its effective values (concurrency 10→2, polling 30s→5s) changes runtime behavior; left for a separate decision.
+
+**Lesson**: When a config schema is defined in a typed language (Ecto / Pydantic / serde), the field-name casing in the source file MUST match the schema exactly. A "normalize_keys" step is not necessarily a case-converter — read what it actually does. Silent fallback to defaults is the most dangerous config failure mode: no error, no log, just wrong runtime behavior. Tell-tale symptom: values shown in logs differ from values written in the config file.
+
+**Files**: `elixir/WORKFLOW-ops.md` (unfixed), `elixir/WORKFLOW-happyclaw.md` + `elixir/WORKFLOW-miniagent.md` (correct snake_case)
